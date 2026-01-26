@@ -1,0 +1,44 @@
+context_everywhere input != null;
+context_everywhere input.length == size;
+context_everywhere size > 0;
+context |inp_seq| == size;
+context (\forall* int i; i >= 0 && i < size; Perm(input[i], write));
+yields seq<int> out_seq;
+requires (\forall int i; 0 <= i && i < size; input[i] == inp_seq[i]);
+ensures |out_seq| == size;
+ensures (\forall int i; 0 <= i && i < size; input[i] == out_seq[i]);
+ensures isPermutation<int>(inp_seq, out_seq);
+void bubble(int[] input, int size, seq<int> inp_seq){
+    int outerLoop = 0;
+    int innerLoop = 0;
+    int temp;
+    out_seq = inp_seq;
+
+    loop_invariant outerLoop >= 0 && outerLoop <= size-1;
+    loop_invariant (\forall* int i; i >= 0 && i < size; Perm(input[i], write));
+    loop_invariant |out_seq| == size;
+    loop_invariant (\forall int i; 0 <= i && i < size; input[i] == out_seq[i]);
+    loop_invariant isPermutation<int>(inp_seq, out_seq);
+    while(outerLoop < size-1){
+            innerLoop = 0;
+
+            loop_invariant outerLoop >= 0 && outerLoop < size-1;
+            loop_invariant innerLoop >= 0 && innerLoop <= size-outerLoop-1;
+            loop_invariant (\forall* int i; i >= 0 && i < size; Perm(input[i], write));
+            loop_invariant |out_seq| == size;
+            loop_invariant (\forall int i; 0 <= i && i < size; input[i] == out_seq[i]);
+            loop_invariant isPermutation<int>(inp_seq, out_seq);
+            while(innerLoop < size-outerLoop-1){
+                if (input[innerLoop] > input[innerLoop+1]){
+                    lemma_permutation_apply<int>(inp_seq, out_seq, innerLoop, innerLoop+1);
+                    temp = input[innerLoop];
+                    input[innerLoop] = input[innerLoop+1];
+                    out_seq = out_seq[innerLoop -> input[innerLoop+1]];
+                    input[innerLoop+1] = temp;
+                    out_seq = out_seq[innerLoop+1 -> temp];
+                }
+                innerLoop = innerLoop + 1;
+            }
+            outerLoop = outerLoop + 1;
+    }
+}

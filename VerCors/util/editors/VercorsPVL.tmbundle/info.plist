@@ -1,0 +1,16 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+	<key>contactEmailRot13</key>
+	<string>j.u.z.bbegjvwa@hgjragr.ay</string>
+	<key>contactName</key>
+	<string>Wytse Oortwijn</string>
+	<key>description</key>
+	<string>Syntax highlighting for the program verification (toy) language (PVL for short) that comes with the Vercors verification toolset.</string>
+	<key>name</key>
+	<string>Vercors-PVL</string>
+	<key>uuid</key>
+	<string>0748962D-23F0-4F92-8BDA-BD8BB099A5D9</string>
+</dict>
+</plist>

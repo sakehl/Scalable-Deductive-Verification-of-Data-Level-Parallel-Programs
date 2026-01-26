@@ -1,0 +1,21 @@
+// -*- tab-width:2 ; indent-tabs-mode:nil -*-
+//:: cases Goto2
+//:: tools silicon carbon
+
+class Ref {
+
+   requires n > 0;
+   ensures \result > 0;
+   int t2(int n){
+     int r;
+     goto lbl1;
+     label lbl2;
+     r = n;
+     goto lbl3;
+     label lbl1;
+     goto  lbl2;
+     label lbl3;
+     return r;
+   }
+}
+

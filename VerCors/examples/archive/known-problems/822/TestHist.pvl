@@ -1,0 +1,30 @@
+// -*- tab-width:2 ; indent-tabs-mode:nil -*-
+//:: case TestHistory
+//:: tool silicon
+//:: option --check-history
+
+
+class History {
+  int x;
+  
+  modifies x;
+  ensures x==\old(x)+1;
+  process step();
+}
+
+
+class Test {
+
+  static void main(){
+    History h=new History();
+    h.x = 1;
+    create h;
+    assert AbstractState(h,x==1);
+    action(h,1,empty,h.step(),x,write){
+      h.x=h.x+1;
+    }
+    destroy h,h.step();
+    assert h.x==2;
+  }
+}
+

@@ -1,0 +1,199 @@
+/*
+The extract declaration may be placed directly in front of a statement that has a contract. You can also explicitly
+specify a contract via the "frame" statement.
+
+This can be a useful proof tool to e.g. verify that a loop invariant does not use any local knowledge, and as a speed-up
+when the branching factor becomes high, e.g. when there are many if's and while's whose conditions are orthogonal.
+*/
+
+void test1() {
+    // only read, information hidden
+    int x = 3;
+    extract frame {
+        [/expect assertFailed:false]
+        assert x == 3;
+        [/end]
+    }
+}
+
+void test2() {
+    // only read, information required
+    int x = 3;
+    extract frame
+    requires x == 3; {
+        assert x == 3;
+    }
+}
+
+void test3() {
+    // only write, information hidden
+    int x;
+    extract frame {
+        x = 3;
+    }
+    [/expect assertFailed:false]
+    assert x == 3;
+    [/end]
+}
+
+void test4() {
+    // only write, information ensured
+    int x;
+    extract frame
+    ensures x == 3; {
+        x = 3;
+    }
+    assert x == 3;
+}
+
+void test5() {
+    // read and write, information hidden
+    int x = 2;
+    extract frame {
+        x = x * 2;
+    }
+    [/expect assertFailed:false]
+    assert x == 4;
+    [/end]
+}
+
+void test6() {
+    // read and write, only requirement
+    int x = 2;
+    extract frame
+    requires x == 2; {
+        x = x * 2;
+        assert x == 4;
+    }
+    [/expect assertFailed:false]
+    assert x == 4;
+    [/end]
+}
+
+void test7() {
+    // read and write, only ensures
+    int x = 2;
+    extract frame
+    ensures x == 4; {
+        x = x * 2;
+        [/expect assertFailed:false]
+        assert x == 4;
+        [/end]
+    }
+    assert x == 4;
+}
+
+void test8() {
+    // read and write, properly framed
+    int x = 2;
+    extract frame
+    requires x == 2;
+    ensures x == 4; {
+        x = x * 2;
+        assert x == 4;
+    }
+    assert x == 4;
+}
+
+void test9() {
+    // when not extracted, frames retain some local knowledge
+    int x = 3;
+    frame {
+        assert x == 3;
+    }
+}
+
+int test10() {
+    // you can also extract loops
+    int x = 2;
+    extract while(true) {
+        [/expect assertFailed:false]
+        assert x == 2;
+        [/end]
+    }
+}
+
+int test11() {
+    // if not extracted, loops have some local knowledge
+    int x = 2;
+    while(true) {
+        assert x == 2;
+    }
+}
+
+int test12() {
+    // you can also extract for loops.
+    int x = 2;
+    extract
+     loop_invariant 0 <= i && i<=10;
+     loop_invariant x == 2+i;
+    for(int i=0; i<10; i++) {
+        x++;
+    }
+    // Afterwards the loop invariants && !(i<10) hold, which implies that i==10, this x==12.
+    assert x==12;
+}
+
+ decreases;
+int test13() {
+    // You can add decreases clauses to let VerCors proof that the extracted loop/frame terminates
+    int x = 2;
+    extract decreases
+     loop_invariant 0 <= i && i<=10;
+     loop_invariant x == 2+i;
+     decreases 10-i;
+    for(int i=0; i<10; i++) {
+        x++;
+    }
+    assert x==12;
+}
+
+ decreases;
+int test13() {
+    // Without it, it will not prove termination
+    int x = 2;
+    [/expect extractDecreasesFailedNoClause]    
+    extract
+     loop_invariant 0 <= i && i<=10;
+     loop_invariant x == 2+i;
+     decreases 10-i;
+    for(int i=0; i<10; i++) {
+        x++;
+    }
+    [/end]
+    assert x==12;
+}
+
+ decreases p;
+ requires p >= 0;
+int test14(int p) {
+    // If the function itself is recursive, you need to use a trick to get it to work.
+    // The following does not work, because it will call the extracted function with regular p
+    // This means p is not actually decreasing.
+    int res;
+    if(p == 0) return 0;
+    [/expect extractDecreasesFailedClause]
+    extract decreases p frame
+    requires p > 0;
+    {
+        res = test14(p-1);
+    }
+    [/end]
+    return res;
+}
+
+ decreases p, 1;
+ requires p >= 0;
+int test14(int p) {
+    // But this works, since the normal function call has decrease measure p,1. And the extracted function has decrease measure p,0.
+    // So the extracted function call is decreasing, even if it doesn't decrease p immediately.
+    int res;
+    if(p == 0) return 0;
+
+    extract decreases p, 0 frame
+    requires p > 0;
+    {
+        res = test14(p-1);
+    }
+    return res;
+}

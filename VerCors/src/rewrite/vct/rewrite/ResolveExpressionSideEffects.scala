@@ -1,0 +1,689 @@
+package vct.col.rewrite
+
+import hre.util.ScopedStack
+import vct.col.util.AstBuildHelpers._
+import vct.col.ast._
+import vct.col.rewrite.error.ExtraNode
+import vct.col.origin.{
+  DerefAssignTarget,
+  LabelContext,
+  Origin,
+  PreferredName,
+  TrueSatisfiable,
+}
+import vct.col.ref.Ref
+import vct.result.VerificationError.{Unreachable, UserError}
+
+import scala.collection.mutable
+import scala.collection.mutable.ArrayBuffer
+import scala.reflect.ClassTag
+
+case object ResolveExpressionSideEffects extends RewriterBuilder {
+  override def key: String = "sideEffects"
+  override def desc: String =
+    "Discharge side effects from expression evaluation into its surrounding context."
+
+  val SideEffectOrigin: Origin = Origin(
+    Seq(PreferredName(Seq("flatten")), LabelContext("side effect"))
+  )
+
+  val ResultVar: Origin = Origin(
+    Seq(PreferredName(Seq("res")), LabelContext("return value"))
+  )
+
+  case class DisallowedAssignmentTarget(target: Expr[_]) extends UserError {
+    override def code: String = "disallowedAssignmentTarget"
+    override def text: String =
+      target.o.messageInContext("This target cannot be assigned to.")
+  }
+
+  case class DisallowedSideEffect(effector: Expr[_]) extends UserError {
+    override def code: String = "sideEffect"
+    override def text: String =
+      effector.o.messageInContext(
+        "This expression may have side effects, but it is in a position where that is not allowed."
+      )
+  }
+
+  case class DisallowedProofExpression(proofExpression: Expr[_])
+      extends UserError {
+    override def code: String = "proofExpression"
+    override def text: String =
+      proofExpression.o.messageInContext(
+        "Cannot evaluate this kind of expression here when combined with expressions that have a side effect."
+      )
+  }
+
+  val BreakOrigin: Origin = Origin(
+    Seq(PreferredName(Seq("condition_false")), LabelContext("loop exit"))
+  )
+}
+
+case class ResolveExpressionSideEffects[Pre <: Generation]()
+    extends Rewriter[Pre] {
+  import ResolveExpressionSideEffects._
+
+  val currentResultVar: ScopedStack[Local[Post]] = ScopedStack()
+
+  // executionContext.top contains an acceptor of statements, if side effects in expressions currently have a logical
+  // place to be put.
+  val executionContext: ScopedStack[Option[Statement[Post] => Unit]] =
+    ScopedStack()
+
+  def inPure: Boolean = executionContext.isEmpty || executionContext.top.isEmpty
+
+  // All expressions are in principle extracted:
+  // 1 + 2 --> flat1 = 1; flat2 = 2; flat3 = flat1 + flat2; flat3
+  // However, extractions are first stored in this map, and are only flushed to the executionContext if an actual
+  // side effect occurs. If not, they are removed from the map and inlined again.
+  val currentlyExtracted
+      : mutable.LinkedHashMap[Variable[Post], (Seq[Expr[Post]], Expr[Post])] =
+    mutable.LinkedHashMap()
+
+  val flushedExtracted: mutable.Set[Variable[Post]] = mutable.Set()
+
+  // conditions may be duplicated, so they have to be duplicable for free probably? i.e. no internal declarations
+  // like let.
+  val currentConditions: ScopedStack[Expr[Post]] = ScopedStack()
+
+  // When an actual side effect occurs, this flushes out the extracted pure expressions as side effects.
+  def flushExtractedExpressions(): Unit = {
+    val allExtracted = currentlyExtracted.toSeq
+    currentlyExtracted.clear()
+
+    for ((flat, _) <- allExtracted) { flushedExtracted += flat }
+
+    for ((flat, (conditions, pureExpr)) <- allExtracted) {
+      executionContext.topOption.flatten match {
+        case None =>
+          throw Unreachable(
+            "flushExtractedExpressions is not called from pure context."
+          )
+        case Some(acceptor) =>
+          variables.declare(flat)
+          implicit val o: Origin = SideEffectOrigin
+          val condition = ReInliner().dispatch(foldAnd(conditions))
+          val action = assignLocal[Post](Local(flat.ref), pureExpr)
+          acceptor(condition match {
+            case BooleanValue(true) => action
+            case condition => Branch(Seq((condition, action)))
+          })
+      }
+    }
+  }
+
+  def effect(stat: Statement[Post]): Unit = {
+    flushExtractedExpressions()
+    implicit val o: Origin = SideEffectOrigin
+    val condition = ReInliner().dispatch(foldAnd(currentConditions.toSeq))
+    executionContext.top.get(condition match {
+      case BooleanValue(true) => stat
+      case condition => Branch(Seq((condition, stat)))
+    })
+  }
+
+  case class ReInliner() extends NonLatchingRewriter[Post, Post] {
+    // ReInliner does not latch declarations ...
+    override def porcelainRefSucc[RefDecl <: Declaration[Post]](
+        ref: Ref[Post, _]
+    )(implicit tag: ClassTag[RefDecl]): Option[Ref[Post, RefDecl]] =
+      Some(ref.asInstanceOf[Ref[Post, RefDecl]])
+
+    override def porcelainRefSeqSucc[RefDecl <: Declaration[Post]](
+        refs: Seq[Ref[Post, _]]
+    )(implicit tag: ClassTag[RefDecl]): Option[Seq[Ref[Post, RefDecl]]] =
+      Some(refs.map(_.asInstanceOf[Ref[Post, RefDecl]]))
+
+    // ... but since we need to be able to unpack locals, we latch those, and they are not latched in
+    // ResolveExpressionSideEffects.
+    override def dispatch(e: Expr[Post]): Expr[Post] =
+      e match {
+        case Local(Ref(v)) =>
+          currentlyExtracted.remove(v) match {
+            case Some((_, pureExpression)) => pureExpression
+            case None =>
+              if (flushedExtracted.contains(v)) { Local[Post](v.ref)(e.o) }
+              else {
+                val preV = (v: Variable[Post]).asInstanceOf[Variable[Pre]]
+                Local[Post](ResolveExpressionSideEffects.this.succ(preV))(e.o)
+              }
+          }
+        case other => super.dispatch(other)
+      }
+
+    /** In case we want to reinline a declaration, we do not want to rewrite it,
+      * because it has already been rewritten by the root rewriter.
+      */
+    override def dispatch(decl: Declaration[Post]): Unit =
+      allScopes.anyDeclare(decl)
+
+  }
+
+  def collectVarsIfOuterScope[T](f: => T): (Seq[Variable[Post]], T) = {
+    if (variables.isEmpty)
+      variables.collect(f)
+    else
+      (Nil, f)
+  }
+
+  def evaluateOne(
+      e: Expr[Pre]
+  ): (Seq[Variable[Post]], Seq[Statement[Post]], Expr[Post]) = {
+    val statements = ArrayBuffer[Statement[Post]]()
+
+    val previouslyExtracted = currentlyExtracted.keySet.toSet
+
+    try {
+      val (vars, result) = collectVarsIfOuterScope {
+        executionContext.having(Some(statements.append)) {
+          ReInliner().dispatch(dispatch(e))
+        }
+      }
+
+      // All extracted expressions are re-inlined, or are flushed as side effects.
+      // Exception: if expression evaluation recurses, then either the expressions extracted in the outer evaluation
+      // are flushed by us, or they remain exactly in the extracted expressions.
+      assert(
+        currentlyExtracted.isEmpty ||
+          currentlyExtracted.keySet.toSet == previouslyExtracted
+      )
+
+      (vars, statements.toSeq, result)
+    } catch {
+      // The expression contains constructs (e.g. \forall) of which the combination with side effects would be confusing ...
+      case err: DisallowedProofExpression =>
+        // To continue without crashing, restore the situation as before
+        currentlyExtracted --=
+          (currentlyExtracted.keySet.toSet -- previouslyExtracted)
+        try {
+          // ... so try to evaluate it as a pure expression ...
+          executionContext.having(None) { (Nil, Nil, dispatch(e)) }
+        } catch {
+          // ... when that doesn't work, the problem is the construct (e.g. \forall)
+          case _: DisallowedSideEffect => throw err
+        }
+    }
+  }
+
+  def evaluateAll(
+      es: Seq[Expr[Pre]]
+  ): (Seq[Variable[Post]], Seq[Statement[Post]], Seq[Expr[Post]]) = {
+    implicit val o: Origin = SideEffectOrigin
+    /* PB: We do a bit of a hack here, and place all the expressions we want to evaluate into one tuple. This ensures
+       that we don't have to think about manually joining the side effects of two subsequent evaluations. For example,
+       given that expression #1 has no side effects that occur after evaluation, we may use it immediately without
+       storing it in an intermediate variable. However, if expression #2 has side effects (before or after evaluation),
+       we have to store it in an intermediate variable after all. A tuple encodes exactly this process for us, and so
+       we do not duplicate the logic here.
+     */
+    val (variables, sideEffects, result) = evaluateOne(LiteralTuple(Nil, es))
+    (variables, sideEffects, result.asInstanceOf[LiteralTuple[Post]].values)
+  }
+
+  def frameAll(
+      exprs: Seq[Expr[Pre]],
+      make: Seq[Expr[Post]] => Statement[Post],
+  ): Statement[Post] = {
+    implicit val o: Origin = SideEffectOrigin
+    val (variables, sideEffects, result) = evaluateAll(exprs)
+    val statement = make(result)
+
+    val allStements =
+      if (sideEffects.isEmpty)
+        statement
+      else
+        Block(sideEffects :+ statement)
+
+    if (variables.isEmpty)
+      allStements
+    else
+      Scope(variables, allStements)
+  }
+
+  def frame(
+      expr: Expr[Pre],
+      make: Expr[Post] => Statement[Post],
+  ): Statement[Post] = frameAll(Seq(expr), es => make(es.head))
+  def frame(
+      e1: Expr[Pre],
+      e2: Expr[Pre],
+      make: (Expr[Post], Expr[Post]) => Statement[Post],
+  ): Statement[Post] = frameAll(Seq(e1, e2), es => make(es(0), es(1)))
+
+  def doBranches(
+      branches: Seq[(Expr[Pre], Statement[Pre])]
+  )(implicit o: Origin): Statement[Post] =
+    branches match {
+      case Nil => Branch(Nil)
+      case (cond, impl) +: tail =>
+        doBranches(tail) match {
+          case Branch(branches) =>
+            frame(cond, cond => Branch((cond, dispatch(impl)) +: branches))
+          case otherwise =>
+            frame(
+              cond,
+              cond => Branch(Seq((cond, dispatch(impl)), (tt, otherwise))),
+            )
+        }
+    }
+
+  override def dispatch(stat: Statement[Pre]): Statement[Post] =
+    executionContext.having(None) {
+      implicit val o: Origin = stat.o
+      stat match {
+        case Eval(e) => frame(e, Eval(_))
+        case inv @ InvokeMethod(
+              obj,
+              Ref(method),
+              args,
+              outArgs,
+              typeArgs,
+              givenMap,
+              yields,
+            ) =>
+          val res =
+            new Variable[Post](dispatch(
+              method.returnType
+                .particularize(method.typeArgs.zip(typeArgs).toMap)
+            ))(ResultVar)
+          frameAll(
+            obj +: args,
+            { case obj +: args =>
+              Scope(
+                Seq(res),
+                InvokeMethod[Post](
+                  obj,
+                  succ(method),
+                  args,
+                  res.get(inv.o) +: outArgs.map(dispatch),
+                  typeArgs.map(dispatch),
+                  givenMap.map { case (Ref(v), e) => (succ(v), dispatch(e)) },
+                  yields.map { case (e, Ref(v)) => (dispatch(e), succ(v)) },
+                )(inv.blame),
+              )
+            },
+          )
+        case inv @ InvokeProcedure(
+              Ref(method),
+              args,
+              outArgs,
+              typeArgs,
+              givenMap,
+              yields,
+            ) =>
+          val res =
+            new Variable[Post](dispatch(
+              method.returnType
+                .particularize(method.typeArgs.zip(typeArgs).toMap)
+            ))(ResultVar)
+          frameAll(
+            args,
+            args =>
+              Scope(
+                Seq(res),
+                InvokeProcedure[Post](
+                  succ(method),
+                  args,
+                  res.get(inv.o) +: outArgs.map(dispatch),
+                  typeArgs.map(dispatch),
+                  givenMap.map { case (Ref(v), e) => (succ(v), dispatch(e)) },
+                  yields.map { case (e, Ref(v)) => (dispatch(e), succ(v)) },
+                )(inv.blame),
+              ),
+          )
+        case decl: LocalDecl[Pre] => super.dispatch(decl)
+        case decl: HeapLocalDecl[Pre] => decl.rewriteDefault()
+        case Return(result) =>
+          frame(
+            result,
+            e =>
+              Block(Seq(assignLocal(currentResultVar.top, e), Return(Void()))),
+          )
+        case ass @ Assign(target, value) =>
+          frame(PreAssignExpression[Pre](target, value)(ass.blame), Eval(_))
+        case block: Block[Pre] => super.dispatch(block)
+        case scope: Scope[Pre] => super.dispatch(scope)
+        case Branch(branches) => doBranches(branches)
+        case Switch(expr, body) => frame(expr, Switch(_, dispatch(body)))
+        case loop @ Loop(init, cond, update, contract, body) =>
+          evaluateOne(cond) match {
+            case (Nil, Nil, cond) =>
+              Loop(
+                dispatch(init),
+                cond,
+                dispatch(update),
+                dispatch(contract),
+                dispatch(body),
+              )
+            case (variables, sideEffects, cond) =>
+              val break = new LabelDecl[Post]()(BreakOrigin)
+
+              Block(Seq(
+                Loop(
+                  dispatch(init),
+                  tt,
+                  dispatch(update),
+                  dispatch(contract),
+                  Block(Seq(
+                    Scope(
+                      variables,
+                      Block(
+                        sideEffects :+ Branch(Seq(Not(cond) -> Goto(break.ref)))
+                      ),
+                    ),
+                    dispatch(body),
+                  )),
+                ),
+                Label(
+                  break,
+                  Block(Nil),
+                  LoopInvariant(tt, None)(TrueSatisfiable),
+                ),
+              ))
+          }
+        case attempt: TryCatchFinally[Pre] => super.dispatch(attempt)
+        case sync @ Synchronized(obj, body) =>
+          frame(obj, Synchronized(_, dispatch(body))(sync.blame))
+        case inv: ParInvariant[Pre] => super.dispatch(inv)
+        case atomic: ParAtomic[Pre] => super.dispatch(atomic)
+        case barrier: ParBarrier[Pre] => super.dispatch(barrier)
+        case vec: VecBlock[Pre] =>
+          super
+            .dispatch(
+              vec
+            ) // PB: conceivably we can support side effect in iterator ranges; let's see if someone wants that :)
+        case send: Send[Pre] => super.dispatch(send)
+        case recv: Recv[Pre] => super.dispatch(recv)
+        case default: DefaultCase[Pre] => super.dispatch(default)
+        case Case(pattern) => Case(dispatch(pattern))
+        case label: Label[Pre] => super.dispatch(label)
+        case goto: Goto[Pre] => super.dispatch(goto)
+        case exhale: Exhale[Pre] => super.dispatch(exhale)
+        case assert @ Assert(expr) if TBool().superTypeOf(expr.t) =>
+          frame(expr, Assert(_)(assert.blame))
+        case assert: Assert[Pre] => super.dispatch(assert)
+        case refute: Refute[Pre] => super.dispatch(refute)
+        case inhale: Inhale[Pre] => super.dispatch(inhale)
+        case Assume(expr) => frame(expr, Assume(_))
+        case ignore: SpecIgnoreStart[Pre] => super.dispatch(ignore)
+        case ignore: SpecIgnoreEnd[Pre] => super.dispatch(ignore)
+        case t @ Throw(obj) => frame(obj, Throw(_)(t.blame))
+        case wait @ Wait(obj) => frame(obj, Wait(_)(wait.blame))
+        case notify @ Notify(obj) => frame(obj, Notify(_)(notify.blame))
+        case f @ Fork(obj) => frame(obj, Fork(_)(f.blame))
+        case j @ Join(obj) => frame(obj, Join(_)(j.blame))
+        case l @ Lock(obj) => frame(obj, Lock(_)(l.blame))
+        case unlock @ Unlock(obj) => frame(obj, Unlock(_)(unlock.blame))
+        case fold: Fold[Pre] => super.dispatch(fold)
+        case unfold: Unfold[Pre] => super.dispatch(unfold)
+        case create: WandPackage[Pre] => super.dispatch(create)
+        case apply: WandApply[Pre] => super.dispatch(apply)
+        case modelDo: ModelDo[Pre] => super.dispatch(modelDo)
+        case havoc: Havoc[Pre] =>
+          super.dispatch(havoc) // PB: pretty sure you can only havoc locals?
+        case break: Break[Pre] => super.dispatch(break)
+        case continue: Continue[Pre] => super.dispatch(continue)
+        case commit: Commit[Pre] => super.dispatch(commit)
+        case par: ParStatement[Pre] => super.dispatch(par)
+        case n: SilverNewRef[Pre] => super.dispatch(n)
+        case assn: SilverFieldAssign[Pre] => super.dispatch(assn)
+        case assn: SilverLocalAssign[Pre] => super.dispatch(assn)
+        case proof: FramedProof[Pre] => super.dispatch(proof)
+        case extract: Extract[Pre] => super.dispatch(extract)
+        case branch: IndetBranch[Pre] => super.dispatch(branch)
+        case rangedFor: RangedFor[Pre] => super.dispatch(rangedFor)
+        case assign: VeyMontAssignExpression[Pre] => super.dispatch(assign)
+        case comm: CommunicateX[Pre] => super.dispatch(comm)
+        case comm: CommunicateStatement[Pre] => super.dispatch(comm)
+        case _: PVLBranch[Pre] => throw ExtraNode
+        case _: PVLLoop[Pre] => throw ExtraNode
+        case _: CStatement[Pre] => throw ExtraNode
+        case _: CPPStatement[Pre] => throw ExtraNode
+        case _: JavaStatement[Pre] => throw ExtraNode
+        case _: PVLCommunicateStatement[Pre] => throw ExtraNode
+        case _: LLVMStatement[Pre] => throw ExtraNode
+      }
+    }
+
+  override def dispatch(decl: Declaration[Pre]): Unit =
+    decl match {
+      case cons: Constructor[Pre] => super.dispatch(cons)
+      case method: AbstractMethod[Pre] =>
+        val res = new Variable[Post](dispatch(method.returnType))(ResultVar)
+        currentResultVar.having(Local[Post](res.ref)(ResultVar)) {
+          allScopes.anyDeclare(allScopes.anySucceedOnly(
+            method,
+            method.rewrite(
+              returnType = TVoid()(method.o),
+              outArgs =
+                variables.collect {
+                  variables.declare(res)
+                  method.outArgs.foreach(dispatch)
+                }._1,
+            ),
+          ))
+        }
+      case other => super.dispatch(other)
+    }
+
+  override def dispatch(e: Expr[Pre]): Expr[Post] =
+    if (inPure)
+      dispatchPure(e)
+    else
+      dispatchImpure(e)
+
+  def dispatchPure(e: Expr[Pre]): Expr[Post] =
+    e match {
+      case Result(_) if currentResultVar.nonEmpty => currentResultVar.top
+      case _: PreAssignExpression[Pre] | _: PostAssignExpression[Pre] |
+          _: With[Pre] | _: Then[Pre] | _: MethodInvocation[Pre] |
+          _: ProcedureInvocation[Pre] =>
+        throw DisallowedSideEffect(e)
+      case other => super.dispatch(other)
+    }
+
+  def inlined(e: Expr[Pre]): Expr[Post] =
+    ReInliner().dispatch(dispatchImpure(e))
+
+  def notInlined(e: Expr[Pre]): Local[Post] =
+    dispatchImpure(e) match {
+      case Local(Ref(v)) if !currentlyExtracted.contains(v) =>
+        val preV = (v: Variable[Post]).asInstanceOf[Variable[Pre]]
+        Local[Post](succ(preV))(e.o)
+      case other => other
+    }
+
+  def stored(e: Expr[Post], t: Type[Pre]): Local[Post] = {
+    val v = new Variable[Post](dispatch(t))(SideEffectOrigin)
+    currentlyExtracted(v) = (currentConditions.toSeq, e)
+    Local[Post](v.ref)(SideEffectOrigin)
+  }
+
+  def assignTarget(target: Expr[Pre]): Expr[Post] = {
+    val result =
+      target match {
+        case Local(Ref(v)) => Local[Post](succ(v))(target.o)
+        case HeapLocal(Ref(v)) => HeapLocal[Post](succ(v))(target.o)
+        case deref @ DerefHeapVariable(Ref(v)) =>
+          DerefHeapVariable[Post](succ(v))(deref.blame)(target.o)
+        case Deref(obj, Ref(f)) =>
+          Deref[Post](notInlined(obj), succ(f))(DerefAssignTarget)(target.o)
+        case SilverDeref(obj, Ref(f)) =>
+          SilverDeref[Post](notInlined(obj), succ(f))(DerefAssignTarget)(
+            target.o
+          )
+        case sub @ ArraySubscript(arr, index) =>
+          ArraySubscript[Post](notInlined(arr), notInlined(index))(sub.blame)(
+            target.o
+          )
+        case PointerSubscript(arr, index)
+            if arr.t.isInstanceOf[TImmutablePointer[_]] =>
+          throw DisallowedAssignmentTarget(target)
+        case sub @ PointerSubscript(arr, index) =>
+          PointerSubscript[Post](notInlined(arr), notInlined(index))(sub.blame)(
+            target.o
+          )
+        case deref @ DerefPointer(ptr) =>
+          DerefPointer[Post](notInlined(ptr))(deref.blame)(target.o)
+        case VectorSubscript(_, _) => throw DisallowedAssignmentTarget(target)
+        case SeqSubscript(_, _) => throw DisallowedAssignmentTarget(target)
+        case other => ???
+      }
+    flushExtractedExpressions()
+    result
+  }
+
+  def dispatchImpure(e: Expr[Pre]): Local[Post] =
+    e match {
+      case Local(Ref(v)) =>
+        // We do not take the successor here: ReInliner will do that.
+        val postV = (v: Variable[Pre]).asInstanceOf[Variable[Post]]
+        Local[Post](postV.ref)(e.o)
+
+      case Result(_) if currentResultVar.nonEmpty => currentResultVar.top
+
+      // ## Nodes of which the combination with side effects is ill-defined: ##
+      // PB: we could probably support let in impure contexts, is it useful?
+      // PB: technically only binders are problematic, others are just confusing
+      // e.g. allowing unfolding would enable:
+      //     \unfolding p() in (1 with inhale p())
+      // to verify.
+      case Star(_, _) | Exists(_, _, _) | Forall(_, _, _) | Starall(_, _, _) |
+          Let(_, _, _) | Sum(_, _, _) | Product(_, _, _) | ForPerm(_, _, _) |
+          PolarityDependent(_, _) | Unfolding(_, _) =>
+        throw DisallowedProofExpression(e)
+
+      // ## Nodes that induce an implicit evaluation condition: ##
+      case Select(cond, whenTrue, whenFalse) =>
+        val cond1 = dispatchImpure(cond)
+        val whenTrue1 =
+          currentConditions.having(cond1) { dispatchImpure(whenTrue) }
+        val whenFalse1 =
+          currentConditions.having(Not(cond1)(e.o)) {
+            dispatchImpure(whenFalse)
+          }
+        stored(
+          ReInliner().dispatch(Select(cond1, whenTrue1, whenFalse1)(e.o)),
+          e.t,
+        )
+      case Implies(left, right) =>
+        val left1 = dispatchImpure(left)
+        val right1 = currentConditions.having(left1) { dispatchImpure(right) }
+        stored(ReInliner().dispatch(Implies(left1, right1)(e.o)), e.t)
+      case And(left, right) =>
+        val left1 = dispatchImpure(left)
+        val right1 = currentConditions.having(left1) { dispatchImpure(right) }
+        stored(ReInliner().dispatch(And(left1, right1)(e.o)), e.t)
+      case Or(left, right) =>
+        val left1 = dispatchImpure(left)
+        val right1 =
+          currentConditions.having(Not(left1)(e.o)) { dispatchImpure(right) }
+        stored(ReInliner().dispatch(Or(left1, right1)(e.o)), e.t)
+
+      // ## Nodes that induce side effects: ##
+      case ass @ PreAssignExpression(oldTarget, oldValue) =>
+        // target and value could be inline, if it were not for the fact that we need value to return it (since value
+        // may have a more specific type than the target type)
+        val target = assignTarget(oldTarget)
+        val value = notInlined(oldValue)
+        effect(Assign(target, value)(ass.blame)(e.o))
+        stored(value, oldValue.t)
+      case ass @ PostAssignExpression(oldTarget, value) =>
+        val cachedTarget = stored(inlined(oldTarget), oldTarget.t)
+        val target = assignTarget(oldTarget)
+        effect(Assign(target, inlined(value))(ass.blame)(e.o))
+        stored(cachedTarget, oldTarget.t)
+      case With(pre, value) =>
+        effect(dispatch(pre))
+        dispatchImpure(value)
+      case Then(oldValue, post) =>
+        val value = notInlined(oldValue)
+        effect(dispatch(post))
+        stored(value, oldValue.t)
+      case inv @ MethodInvocation(
+            obj,
+            Ref(method),
+            args,
+            outArgs,
+            typeArgs,
+            givenMap,
+            yields,
+          ) =>
+        val res = new Variable[Post](dispatch(inv.t))(ResultVar)
+        variables.succeed(res.asInstanceOf[Variable[Pre]], res)
+        effect(
+          InvokeMethod[Post](
+            obj = inlined(obj),
+            ref = succ(method),
+            args = args.map(inlined),
+            outArgs = res.get(inv.o) +: outArgs.map(inlined),
+            typeArgs = typeArgs.map(dispatch),
+            givenMap.map { case (Ref(v), e) => (succ(v), inlined(e)) },
+            yields.map { case (e, Ref(v)) => (inlined(e), succ(v)) },
+          )(inv.blame)(e.o)
+        )
+        stored(res.get(SideEffectOrigin), inv.t)
+      case inv @ ProcedureInvocation(
+            Ref(method),
+            args,
+            outArgs,
+            typeArgs,
+            givenMap,
+            yields,
+            _,
+          ) =>
+        val res =
+          new Variable[Post](dispatch(
+            method.returnType.particularize(method.typeArgs.zip(typeArgs).toMap)
+          ))(ResultVar)
+        variables.succeed(res.asInstanceOf[Variable[Pre]], res)
+        effect(
+          InvokeProcedure[Post](
+            ref = succ(method),
+            args = args.map(inlined),
+            outArgs = res.get(inv.o) +: outArgs.map(inlined),
+            typeArgs = typeArgs.map(dispatch),
+            givenMap.map { case (Ref(v), e) => (succ(v), inlined(e)) },
+            yields.map { case (e, Ref(v)) => (inlined(e), succ(v)) },
+          )(inv.blame)(e.o)
+        )
+        stored(
+          res.get(SideEffectOrigin),
+          method.returnType.particularize(inv.typeEnv),
+        )
+      case inv @ ConstructorInvocation(
+            Ref(cons),
+            classTypeArgs,
+            args,
+            outArgs,
+            typeArgs,
+            givenMap,
+            yields,
+          ) =>
+        val typ = dispatch(cons.cls.decl.classType(classTypeArgs))
+        val res = new Variable[Post](typ)(ResultVar)
+        variables.succeed(res.asInstanceOf[Variable[Pre]], res)
+        effect(
+          InvokeConstructor[Post](
+            ref = succ(cons),
+            classTypeArgs = classTypeArgs.map(dispatch),
+            out = res.get(ResultVar),
+            args = args.map(inlined),
+            outArgs = outArgs.map(dispatch),
+            typeArgs = typeArgs.map(dispatch),
+            givenMap.map { case (Ref(v), e) => (succ(v), inlined(e)) },
+            yields.map { case (e, Ref(v)) => (inlined(e), succ(v)) },
+          )(inv.blame)(e.o)
+        )
+        stored(
+          res.get(SideEffectOrigin),
+          cons.cls.decl.classType(classTypeArgs),
+        )
+      case NewObject(Ref(cls)) =>
+        val res = new Variable[Post](dispatch(cls.classType(Seq())))(ResultVar)
+        variables.succeed(res.asInstanceOf[Variable[Pre]], res)
+        effect(Instantiate[Post](succ(cls), res.get(ResultVar))(e.o))
+        stored(res.get(SideEffectOrigin), cls.ref.decl.classType(Seq()))
+      case other => stored(ReInliner().dispatch(super.dispatch(other)), other.t)
+    }
+}

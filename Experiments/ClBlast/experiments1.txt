@@ -1,0 +1,9 @@
+xamax.cl
+xasum.cl
+xaxpy.cl
+xcopy.cl
+xdot.cl
+xhad.cl
+xnrm2.cl
+xswap.cl
+xscal.cl

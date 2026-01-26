@@ -1,0 +1,29 @@
+// -*- tab-width:2 ; indent-tabs-mode:nil -*-
+//:: cases NestedLoops
+//:: tools silicon
+//:: verdict Pass
+
+class NestedLoops {
+  requires n>=0;
+  ensures \result == n * n * n;
+  int cubed(int n) {
+    int i; int j; int res; int tmp;
+    i = 0;
+    res = 0;
+    loop_invariant 0 <= i && i<=n && res == i * i * i;
+    while(i<n) {
+      j = 0;
+      tmp = 0;
+      loop_invariant 0 <= j && j <= i && tmp == j * j;
+      while(j<i) {
+        tmp = tmp + j;
+        j = j+1;
+        tmp = tmp + j;
+      }
+      res = res + 3 * tmp + 3 * i + 1 ;
+      i = i+1;
+    }
+    return res;
+  }
+}
+

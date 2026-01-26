@@ -1,0 +1,44 @@
+# This CITATION.cff file was generated with cffinit.
+# Visit https://bit.ly/cffinit to generate yours today!
+
+cff-version: 1.2.0
+title: VerCors
+message: >-
+  To cite VerCors, please cite the article from the
+  preferred-citation.
+type: software
+authors:
+  - given-names: Huisman
+    family-names: Marieke
+preferred-citation:
+  authors:
+    - family-names: Armborst
+      given-names: Lukas
+    - family-names: Bos
+      given-names: Pieter
+    - family-names: van den Haak
+      given-names: Lars B.
+    - family-names: Huisman
+      given-names: Marieke
+    - family-names: Rubbens
+      given-names: Robert
+    - family-names: Şakar
+      given-names: Ömer
+    - family-names: Tasche
+      given-names: Philip
+  title: "The VerCors Verifier: A Progress Report"
+  type: "conference-paper"
+  doi: "10.1007/978-3-031-65630-9_1"
+  year: 2024
+  conference:
+    name: " Computer Aided Verification 2024"
+  editors:
+    - family-names: Gurfinkel
+      given-names: Arie
+    - family-names: Ganesh
+      given-names: Vijay
+  publisher:
+    name: "Springer International Publishing"
+    address: "Cham"
+  isbn: "978-3-031-65629-3"
+  pages: "3--18"

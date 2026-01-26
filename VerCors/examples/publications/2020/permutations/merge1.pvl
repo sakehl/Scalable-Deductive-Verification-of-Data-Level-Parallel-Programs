@@ -1,0 +1,138 @@
+//////////////////////////////////////////////////////////////////////////////////////////Main
+
+// Merges two subarrays of arr[].
+// First subarray is arr[l..m]
+// Second subarray is arr[m+1..r]
+// Inplace Implementation
+given seq<int> orig_seq;
+yields seq<int> out_seq;
+context_everywhere input != null;
+context_everywhere input.length == size;
+context_everywhere size > 0;
+requires start >= 0 && start < size;
+requires mid >= 0 && mid < size-1;
+requires end >= 0 && end < size;
+requires start <= end;
+requires mid >= start && mid < end;
+context |inp_seq| == size;
+context (\forall* int k; k >= 0 && k < size; Perm(input[k], write));
+requires (\forall int k; 0 <= k && k < size; input[k] == inp_seq[k]);
+ensures |out_seq| == size;
+ensures (\forall int k; 0 <= k && k < size; input[k] == out_seq[k]);
+requires isPermutation<int>(orig_seq, inp_seq);
+ensures isPermutation<int>(orig_seq, out_seq);
+void Tomerge(int[] input, int size, int start, int mid, int end, seq<int> inp_seq)
+{
+    out_seq = inp_seq;
+    int start2 = mid + 1;
+
+    // If the direct merge is already sorted
+    if (input[mid] <= input[start2]) {
+        return;
+    }
+
+    assert isPermutation<int>(orig_seq, out_seq);
+
+    // Two pointers to maintain start
+    // of both arrays to merge
+    loop_invariant |out_seq| == size;
+    loop_invariant start >= 0 && start < size;
+    loop_invariant end >= 0 && end < size;
+    loop_invariant start <= end;
+    loop_invariant mid+1 >= start;
+    loop_invariant mid <= end;
+    loop_invariant start2 > mid && start2 <= end+1;
+    loop_invariant (\forall* int k; k >= 0 && k < size; Perm(input[k], write));
+    loop_invariant (\forall int k; 0 <= k && k < size; input[k] == out_seq[k]);
+    loop_invariant isPermutation<int>(orig_seq, out_seq);
+    while (start <= mid && start2 <= end) {
+
+        // If element 1 is in right place
+        if (input[start] <= input[start2]) {
+            start++;
+        }
+        else {
+            //int value = input[start2];
+            int index = start2;
+            int temp;
+            // Shift all the elements between element 1
+            // element 2, right by 1.
+            loop_invariant |out_seq| == size;
+            loop_invariant start >= 0 && start < size;
+            loop_invariant end >= 0 && end < size;
+            loop_invariant start <= end;
+            loop_invariant mid >= start && mid <= end;
+            loop_invariant start2 > mid && start2 <= end;
+            loop_invariant index <= start2 && index >= start;
+            loop_invariant (\forall* int k; k >= 0 && k < size; Perm(input[k], write));
+            loop_invariant (\forall int k; 0 <= k && k < size; input[k] == out_seq[k]);
+            loop_invariant isPermutation<int>(orig_seq, out_seq);
+            while (index != start) {
+                //input[index] = input[index - 1];
+                lemma_permutation_apply<int>(orig_seq, out_seq, index-1, index);
+                temp = input[index-1];
+                input[index-1] = input[index];
+                out_seq = out_seq[index-1 -> input[index]];
+                input[index] = temp;
+                out_seq = out_seq[index -> temp];
+                index--;
+            }
+            //input[start] = value;
+
+            // Update all the pointers
+            start++;
+            mid++;
+            start2++;
+        }
+    }
+}
+
+given seq<int> orig_seq;
+yields seq<int> out_seq;
+context_everywhere input != null;
+context_everywhere input.length == size;
+context_everywhere size > 0;
+requires l >= 0 && l < size;
+requires r >= 0 && r < size;
+context |inp_seq| == size;
+context (\forall* int k; k >= 0 && k < size; Perm(input[k], write));
+requires (\forall int k; 0 <= k && k < size; input[k] == inp_seq[k]);
+ensures |out_seq| == size;
+ensures (\forall int k; 0 <= k && k < size; input[k] == out_seq[k]);
+requires isPermutation<int>(orig_seq, inp_seq);
+ensures isPermutation<int>(orig_seq, out_seq);
+void mergeSort(int[] input, int size, int l, int r, seq<int> inp_seq) /* l is for left index and r is right index of the sub-array of arr to be sorted */
+{
+    out_seq = inp_seq;
+    if (l < r) {
+
+        // Same as (l + r) / 2, but avoids overflow
+        // for large l and r
+        int m = l + (r - l) / 2;
+
+        // Sort first and second halves
+        mergeSort(input, size, l, m, out_seq) given { orig_seq = orig_seq } yields { out_seq = out_seq };
+        mergeSort(input, size, m + 1, r, out_seq) given { orig_seq = orig_seq } yields { out_seq = out_seq };
+
+        Tomerge(input, size, l, m, r, out_seq) given { orig_seq = orig_seq } yields { out_seq = out_seq };
+    }
+}
+
+context_everywhere input != null;
+context_everywhere input.length == size;
+context_everywhere size > 0;
+requires l >= 0 && l < size;
+requires r >= 0 && r < size;
+context |inp_seq| == size;
+context (\forall* int k; k >= 0 && k < size; Perm(input[k], write));
+yields seq<int> out_seq;
+requires (\forall int k; 0 <= k && k < size; input[k] == inp_seq[k]);
+ensures |out_seq| == size;
+ensures (\forall int k; 0 <= k && k < size; input[k] == out_seq[k]);
+ensures isPermutation<int>(inp_seq, out_seq);
+void main(int[] input, int size, int l, int r, seq<int> inp_seq){
+    assert isPermutation<int>(inp_seq, inp_seq);
+    l = 0;
+    r = size - 1;
+    mergeSort(input, size, l, r, inp_seq) given { orig_seq = inp_seq } yields { out_seq = out_seq };
+}

@@ -1,0 +1,60 @@
+package vct.col.ast.expr.context
+
+import vct.col.ast.node.NodeFamilyImpl
+import vct.col.ast.{AmbiguousResult, Type}
+import vct.col.check.{CheckContext, CheckError, ResultOutsidePostcondition}
+import vct.col.err
+import vct.col.print._
+import vct.col.resolve.ctx._
+import vct.col.resolve.lang.{C, CPP}
+import vct.col.ast.ops.AmbiguousResultOps
+
+trait AmbiguousResultImpl[G]
+    extends NodeFamilyImpl[G] with AmbiguousResultOps[G] {
+  this: AmbiguousResult[G] =>
+  override lazy val t: Type[G] =
+    ref.getOrElse(
+      throw err.ContextSensitiveNodeNotResolved(
+        this,
+        "'\\result' encountered, but its attached method is not resolved.",
+      )
+    ) match {
+      case RefCFunctionDefinition(decl) =>
+        C.typeOrReturnTypeFromDeclaration(decl.specs, decl.declarator)
+      case RefCGlobalDeclaration(decls, initIdx) =>
+        C.typeOrReturnTypeFromDeclaration(
+          decls.decl.specs,
+          decls.decl.inits(initIdx).decl,
+        )
+      case RefCPPFunctionDefinition(decl) =>
+        CPP.typeOrReturnTypeFromDeclarator(decl.specs, decl.declarator)
+      case RefCPPGlobalDeclaration(decls, initIdx) =>
+        CPP.typeOrReturnTypeFromDeclarator(
+          decls.decl.specs,
+          decls.decl.inits(initIdx).decl,
+        )
+      case RefFunction(decl) => decl.returnType
+      case RefProcedure(decl) => decl.returnType
+      case RefJavaMethod(decl) => decl.returnType
+      case RefJavaAnnotationMethod(decl) => decl.returnType
+      case RefLLVMFunctionDefinition(decl) => decl.returnType
+      case RefLLVMSpecFunction(decl) => decl.returnType
+      case RefInstanceFunction(decl) => decl.returnType
+      case RefInstanceMethod(decl) => decl.returnType
+      case RefInstanceOperatorMethod(decl) => decl.returnType
+      case RefInstanceOperatorFunction(decl) => decl.returnType
+    }
+
+  override def check(context: CheckContext[G]): Seq[CheckError] =
+    if (context.inPostCondition)
+      super.check(context)
+    else
+      Seq(ResultOutsidePostcondition(this))
+
+  override def precedence: Int = Precedence.ATOMIC
+  override def layout(implicit ctx: Ctx): Doc =
+    ctx.syntax match {
+      case Ctx.Silver => Text("result")
+      case _ => Text("\\result")
+    }
+}

@@ -1,0 +1,70 @@
+// -*- tab-width:2 ; indent-tabs-mode:nil -*-
+//:: cases demo4
+//:: tools silicon
+//:: options --check-history
+//:: verdict Pass
+
+// for analysing the models' contract, run: `vct --silicon --check-defined demo4.pvl`
+// for analysing that the program correctly implements the model, run: `vct --silicon --check-history demo4.pvl`
+
+model Model {
+	int x;
+
+	modifies x;
+	ensures x == \old(x) + 2;
+	action incr();
+
+	modifies x;
+	ensures x == \old(x) + 4;
+	process OG() = incr() || incr();
+}
+
+class Program {
+
+	ensures \result == x + 4;
+	int main(int x) {
+		Model m = new Model();
+		m.x = x;
+		assert Perm(m.x, 1); // now we have this
+
+		m.create(m.OG()); // initialise the model
+		assert m.state(1, m.OG()) ** HPerm(m.x, 1); // now we have this
+
+		m.split(1\2, m.incr(), 1\2, m.incr()); // splitting the model
+		assert m.state(1\2, m.incr()) ** m.state(1\2, m.incr()) ** HPerm(m.x, 1); // and now we have this
+
+		// moving the the `HPerm(...)` predicate to the resource invariant (so that both threads can atomically write to m.x)
+		invariant inv(HPerm(m.x, 1)) //;
+		{
+			assert m.state(1\2, m.incr()) ** m.state(1\2, m.incr()); // now we are left with this
+
+			// fork and join both threads, and distribute the model accordingly
+			parallel {
+                par Thread1
+                    requires m.state(1\2, m.incr());
+                    ensures m.state(1\2, empty);
+                        {
+                            atomic (inv) {
+                                action(m, 1\2, empty, m.incr()) { m.x = m.x + 2; }
+                            }
+                        }
+                par Thread2
+                requires m.state(1\2, m.incr());
+                ensures m.state(1\2, empty);
+                {
+                    atomic (inv) {
+                        action(m, 1\2, empty, m.incr()) { m.x = m.x + 2; }
+                    }
+                }
+            }
+			assert m.state(1\2, empty) ** m.state(1\2, empty); // after both threads have terminated, we are left with this
+			m.merge(1\2, empty, 1\2, empty); // we may merge the two models back into one again
+			assert m.state(1, empty); // which gives us this
+		}
+
+		assert m.state(1, empty) ** HPerm(m.x, 1); // here we got back the HPerm(...) predicate from the resource context_everywhere
+		m.destroy(); // finalise the model
+
+		return m.x;
+	}
+}

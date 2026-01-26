@@ -1,0 +1,12 @@
+// -*- tab-width:4 ; indent-tabs-mode:nil -*-
+//:: cases Yield
+//:: tools silicon
+//:: verdict Pass
+
+class Yield {
+    yields int a;
+    ensures a == 1;
+    void test() {
+        a = 1;
+    }
+}

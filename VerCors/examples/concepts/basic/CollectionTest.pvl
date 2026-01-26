@@ -1,0 +1,26 @@
+// -*- tab-width:2 ; indent-tabs-mode:nil -*-
+//:: cases CollectionTest
+//:: tools silicon
+class Ref {
+
+  void types(){
+    seq<int> L;
+    set<int> S;
+    bag<int> B;
+    
+    L=seq<int>{1,2,3};
+    assert L==seq<int>{1,2,3};
+    //assert L!=seq<int>{2,1,3};
+    
+    S=set<int>{1,2,3};
+    assert S==set<int>{2,1,3};
+    assert S==set<int>{1,1,2,3,3};
+    
+    B=bag<int>{1,1,2,3};
+    assert B==bag<int>{1,1,2,3};
+    
+    assert (1 in B)==2;
+    
+  }
+}
+

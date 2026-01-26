@@ -1,0 +1,19 @@
+// -*- tab-width:4 ; indent-tabs-mode:nil -*-
+//:: cases ForPVL
+//:: tools silicon
+//:: verdict Pass
+
+class For {
+    requires n >= 0;
+    ensures \result == n * (n+1) / 2;
+    int test(int n) {
+        int total = 0;
+
+        loop_invariant total == i * (i-1) / 2;
+        for(int i = 1; i != n+1; i++) {
+            total = total + i;
+        }
+
+        return total;
+    }
+}

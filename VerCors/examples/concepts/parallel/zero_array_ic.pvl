@@ -1,0 +1,20 @@
+// -*- tab-width:2 ; indent-tabs-mode:nil -*-
+//:: cases ZeroMultiple
+//:: tools silicon
+//:: verdict Pass
+
+class ZeroArrayIC {
+  context_everywhere ar != null ** N>0;
+	context_everywhere ar.length == N;
+	
+  context (\forall* int i;0 <= i && i < N ; Perm(ar[i],write));
+  ensures (\forall int i;0 <= i && i < N ; ar[i]==0);
+  void vectorZero(int N, int[N] ar){
+    par main(int i = 0 .. N)
+      context Perm(ar[i],write);
+      ensures ar[i]==0;
+    {
+      ar[i]=0;
+    }
+  }
+}

@@ -1,0 +1,46 @@
+// -*- tab-width:2 ; indent-tabs-mode:nil -*-
+//:: cases MinMaxList
+//:: tools silicon
+//:: verdict Pass
+
+/*
+ * This example can be verified with Silicon:
+ * vct --silicon minmax-list.pvl
+ */
+
+class List {
+  resource state()=Perm(this.val,1)**Perm(this.next,1)**(this.next!=null ==> this.next.state());
+
+  /* Pure functions are defined like predicates.
+   */
+  requires this.state();
+  pure boolean minmax(int min,int max)=\unfolding this.state() \in min <= this.val && this.val <= max && (this.next!=null ==> this.next.minmax(min,max));
+
+  int val;
+  List next;
+  requires this.state();
+  ensures this.state();
+  int length(){
+    unfold this.state();
+    int l=0;
+    if(this.next!=null) {
+      l= this.next.length();
+    }
+    l=1;
+    fold this.state();
+    return l;
+  }
+}
+
+class ListStatic {
+  requires 4 <= val ** val <= 17 ** (next!=null ==> (next.state() ** next.minmax(4,17)));
+  ensures \result!=null ** \result.state() ** \result.minmax(4,17);
+  List newList(int val,List next){
+    List l= new List();
+    l.val = val;
+    l.next= next;
+    fold l.state();
+    return l;
+  }
+}
+

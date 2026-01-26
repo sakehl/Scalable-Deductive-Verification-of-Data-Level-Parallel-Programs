@@ -1,0 +1,37 @@
+// -*- tab-width:2 ; indent-tabs-mode:nil -*-
+//:: case OptionDomain
+//:: verdict Fail
+//:: tools silicon
+
+domain Option[T] {
+  function None(): Option[T]
+  function Some(t: T): Option[T]
+  function get(o:Option[T]) : T
+    
+  axiom not_equal {
+    forall x: T :: None() != Some(x)
+  }
+  
+  axiom get_axiom {
+    forall x: T :: {get(Some(x))} get(Some(x)) == x
+  }
+}
+
+function get_Integer(o:Option[Int]) : Int
+  requires  o != None()
+{
+  get(o)
+}
+
+method test() {
+  var x : Option[Int] := None()
+  var y : Option[Int] := Some(37)
+  var i : Int
+  
+  assert x != y
+  
+  assert get_Integer(y) == 37
+  
+  i := get_Integer(x)
+}
+

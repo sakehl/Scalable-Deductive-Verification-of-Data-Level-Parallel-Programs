@@ -1,0 +1,24 @@
+// -*- tab-width:2 ; indent-tabs-mode:nil -*-
+//:: cases ZeroMultiple
+
+
+class ZeroMixedArray {
+  context_everywhere ar != null ** N>0 ** M > 0;
+	context_everywhere ar.length == M * N;
+  context (\forall* int i;0 <= i && i < M*N ; Perm(ar[i],write));
+  ensures (\forall int i;0 <= i && i < M*N ; ar[i]==0);
+  void vectorZero(int M, int N, int[M*N] ar) {
+    par outer (int i = 0 .. M)
+      context (\forall* int k; N*i <= k && k < N*(i+1) ; Perm(ar[k],write));
+      ensures (\forall int k; N*i <= k && k < N*(i+1) ; ar[k]==0 );
+    {
+      par inner (int j= N*i .. N*(i+1))
+				context 0 <= i && i < M;
+        context Perm(ar[j],write);
+        ensures ar[j]==0;
+      {
+        ar[j]=0;
+      }
+    }
+  }
+}

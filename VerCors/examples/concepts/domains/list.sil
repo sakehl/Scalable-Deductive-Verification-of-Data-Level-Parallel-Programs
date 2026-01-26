@@ -1,0 +1,29 @@
+// -*- tab-width:2 ; indent-tabs-mode:nil -*-
+//:: case ListDomain
+//:: verdict Pass
+//:: tools silicon
+
+domain List[T] {
+    function nil(): List[T]
+    function cons(x: T, xs: List[T]): List[T]
+    function length(xs: List[T]): Int
+    
+    axiom nil_length {
+        length((nil() : List[T])) == 0
+    }
+    axiom cons_length {
+        forall x: T , xs: List[T] :: {length(cons(x, xs))} length(cons(x, xs)) == (length(xs) + 1)
+    }
+    axiom nil_cons {
+        forall z: T , zs: List[T] :: cons(z, zs) != nil()
+    }
+}
+
+
+method test(x: Int, xs: List[Int]) {
+    var n: List[Int] := nil()
+    assert length(n) == 0
+    assert n != cons(x, xs)
+    assert length(cons(1, n)) == 1
+}
+

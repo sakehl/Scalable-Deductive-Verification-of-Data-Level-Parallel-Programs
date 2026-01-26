@@ -1,0 +1,21 @@
+// -*- tab-width:2 ; indent-tabs-mode:nil -*-
+//:: cases ZeroArrayLoopPVL
+//:: tools silicon
+//:: verdict Pass
+class array {
+
+  context_everywhere x != null;
+  requires (\forall* int k ; 0 <= k && k < x.length ; Perm(x[k],write));
+  ensures  (\forall* int k ; 0 <= k && k < x.length ; Perm(x[k],write));
+  ensures  (\forall  int k ; 0 <= k && k < x.length ; x[k]==0);
+  void main(int[] x){
+    int i=0;
+    loop_invariant 0 <= i && i <= x.length;
+    loop_invariant (\forall* int k ; 0 <= k && k < x.length ; Perm(x[k],write));
+    loop_invariant (\forall int k ; 0 <= k && k < i ; x[k]==0 );
+    while(i<x.length){
+      x[i]=0;
+      i=i+1;
+    }
+  }
+}

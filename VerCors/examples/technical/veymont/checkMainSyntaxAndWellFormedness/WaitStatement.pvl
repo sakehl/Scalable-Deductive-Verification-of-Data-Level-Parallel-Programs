@@ -1,0 +1,7 @@
+class A {}
+
+choreography Main(A a) {
+	run {
+		wait a; // Not allowed
+	}
+}

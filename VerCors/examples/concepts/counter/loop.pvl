@@ -1,0 +1,27 @@
+// -*- tab-width:2 ; indent-tabs-mode:nil -*-
+//:: cases LoopPVL
+//:: tools silicon
+//begin(all)
+
+class Counter {
+  int x;
+}
+
+class Loop {
+  requires c!=null ** Perm(c.x,1);
+  requires y>=0;
+  ensures  c!=null ** Perm(c.x,1);
+  ensures  c.x==\old(c.x)+y;
+  void incr(Counter c,int y){
+    int i=0;
+    loop_invariant 0 <= i && i <= y;
+    loop_invariant c!=null ** Perm(c.x,1);
+    loop_invariant c.x==\old(c.x)+i;
+    while(i<y){
+      c.x=c.x+1;
+      i=i+1;
+    }
+  }
+}
+//end(all)
+

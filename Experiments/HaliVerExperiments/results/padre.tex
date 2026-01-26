@@ -1,0 +1,64 @@
+\newcommand{\widthPadre}{1}
+\begin{subtable}[t]{0.49\textwidth}
+\resizebox{\widthPadre\textwidth}{!}{
+\begin{tabular}[t]{ll|rrr|rrr|r}
+\hline
+ & & \multicolumn{3}{c|}{\textbf{Base}} & \multicolumn{3}{c}{\textbf{Qualifiers}} & \\
+\textbf{Version} & \textbf{Result} & \textbf{\#} & \textbf{T} & $\mathbf{\sigma_{mean}}$ & \textbf{\#} & \textbf{T} & $\mathbf{\sigma_{mean}}$ & \textbf{Speedup} \\
+\hline
+CB& \checkmark&  10 &  56 & 1&  10&  48 & 1& \cellcolor{ForestGreen!25} 1.2 \\
+NCB& \checkmark&  10 &  56 & 1&  10&  50 & 1& \cellcolor{ForestGreen!25} 1.1 \\
+\end{tabular}
+}
+\caption{\label{tab:StepHalide}\texttt{\texttt{step}}}
+\end{subtable}
+\hfill
+\begin{subtable}[t]{0.49\textwidth}
+\resizebox{\widthPadre\textwidth}{!}{
+\begin{tabular}[t]{ll|rrr|rrr|r}
+\hline
+ & & \multicolumn{3}{c|}{\textbf{Base}} & \multicolumn{3}{c}{\textbf{Qualifiers}} & \\
+\textbf{Version} & \textbf{Result} & \textbf{\#} & \textbf{T} & $\mathbf{\sigma_{mean}}$ & \textbf{\#} & \textbf{T} & $\mathbf{\sigma_{mean}}$ & \textbf{Speedup} \\
+\hline
+CB& \checkmark&  10 &  466 & 9&  10&  142 & 4& \cellcolor{ForestGreen!25} 3.3 \\
+NCB& \checkmark& \cellcolor{BrickRed!25} 0 &   & & \cellcolor{ForestGreen!25} 1&  901 & -& \cellcolor{ForestGreen!25} 1.3 \\
+& \ding{55}& 10 & 1028 & 58& 9 & 780 & 89 \\
+\end{tabular}
+}
+\caption{\label{tab:SubDirectionHalide}\texttt{\texttt{sub\_direction}}}
+\end{subtable}
+\\
+\begin{subtable}[t]{0.49\textwidth}
+\resizebox{\widthPadre\textwidth}{!}{
+\begin{tabular}[t]{ll|rrr|rrr|r}
+\hline
+ & & \multicolumn{3}{c|}{\textbf{Base}} & \multicolumn{3}{c}{\textbf{Qualifiers}} & \\
+\textbf{Version} & \textbf{Result} & \textbf{\#} & \textbf{T} & $\mathbf{\sigma_{mean}}$ & \textbf{\#} & \textbf{T} & $\mathbf{\sigma_{mean}}$ & \textbf{Speedup} \\
+\hline
+CB& \checkmark& \cellcolor{BrickRed!25} 0 &   & & \cellcolor{ForestGreen!25} 10&  961 & 14& \cellcolor{ForestGreen!25} 3.4 \\
+& \ding{55}& 2 & 2086 & 1404& 0 &  &  \\
+& T.O.& 8 & - & -& 0 &  &  \\
+NCB& \ding{55}& 9 & 1139 & 131& 6 & 1211 & 468 \\
+& T.O.& 1 & - & -& 4 & - & - \\
+\end{tabular}
+}
+\caption{\label{tab:SolveDirectionHalide}\texttt{\texttt{solve\_direction}}}
+\end{subtable}
+\hfill
+\begin{subtable}[t]{0.49\textwidth}
+\resizebox{\widthPadre\textwidth}{!}{
+\begin{tabular}[t]{ll|rrr|rrr|r}
+\hline
+ & & \multicolumn{3}{c|}{\textbf{Base}} & \multicolumn{3}{c}{\textbf{Qualifiers}} & \\
+\textbf{Version} & \textbf{Result} & \textbf{\#} & \textbf{T} & $\mathbf{\sigma_{mean}}$ & \textbf{\#} & \textbf{T} & $\mathbf{\sigma_{mean}}$ & \textbf{Speedup} \\
+\hline
+CB& \checkmark& \cellcolor{BrickRed!25} 0 &   & & \cellcolor{ForestGreen!25} 10&  2799 & 38& \cellcolor{ForestGreen!25} 1.2 \\
+& \ding{55}& 6 & 3146 & 101& 0 &  &  \\
+& T.O.& 4 & - & -& 0 &  &  \\
+NCB& \ding{55}& 1 & 3589 & -& 0 &  &  \\
+& T.O.& 9 & - & -& 10 & - & - \\
+\end{tabular}
+}
+\caption{\label{tab:PerformIterationHalide}\texttt{\texttt{perform\_iteration}}}
+\end{subtable}
+\\

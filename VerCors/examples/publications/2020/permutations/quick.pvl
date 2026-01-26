@@ -1,0 +1,83 @@
+given seq<int> orig_seq;
+yields seq<int> out_seq;
+context_everywhere input != null;
+context_everywhere input.length == size;
+context_everywhere size > 0;
+requires low >= 0 && low <= size;
+requires high >= -1 && high <= size-1;
+context |inp_seq| == size;
+ensures |out_seq| == size;
+context (\forall* int k; k >= 0 && k < size; Perm(input[k], write));
+requires (\forall int k; 0 <= k && k < size; input[k] == inp_seq[k]);
+ensures (\forall int k; 0 <= k && k < size; input[k] == out_seq[k]);
+requires isPermutation<int>(orig_seq, inp_seq);
+ensures isPermutation<int>(orig_seq, out_seq);
+void quickSort(int[] input, int size, int low, int high, seq<int> inp_seq)
+{
+    out_seq = inp_seq;
+    if (low < high) {
+        int pivotIdx;
+        int x = input[high];
+        int i = (low - 1);
+        int j = low;
+        int temp;
+
+        /////////////////////////////////////////////////////////////////Partitioning
+        loop_invariant |out_seq| == size;
+        loop_invariant low >= 0 && low <= size-1;
+        loop_invariant high >= 0 && high <= size-1;
+        loop_invariant j >= low;
+        loop_invariant j <= high;
+        loop_invariant i >= (low - 1);
+        loop_invariant i < j;
+        loop_invariant i < high;
+        loop_invariant (\forall* int k; k >= 0 && k < size; Perm(input[k], write));
+        loop_invariant (\forall int k; 0 <= k && k < size; input[k] == out_seq[k]);
+        loop_invariant isPermutation<int>(orig_seq, out_seq);
+        while(j < high){
+            assert isPermutation<int>(orig_seq, out_seq);
+            if (input[j] <= x) {
+                i++;
+                lemma_permutation_apply<int>(orig_seq, out_seq, i, j);
+                //swap(input[i], input[j]);
+                temp = input[i];
+                input[i] = input[j];
+                out_seq = out_seq[i -> input[j]];
+                input[j] = temp;
+                out_seq = out_seq[j -> temp];
+            }
+            j++;
+            assert isPermutation<int>(orig_seq, out_seq);
+        }
+        lemma_permutation_apply<int>(orig_seq, out_seq, i+1, high);
+        //swap(input[i + 1], input[high]);
+        temp = input[i+1];
+        input[i+1] = input[high];
+        out_seq = out_seq[i+1 -> input[high]];
+        input[high] = temp;
+        out_seq = out_seq[high -> temp];
+
+        pivotIdx = i + 1;
+        //////////////////////////////////////////////////////////////////////////////////////////////////Recursive calls
+        quickSort(input, size, low, pivotIdx - 1, out_seq) given { orig_seq = orig_seq } yields { out_seq = out_seq };
+        quickSort(input, size, pivotIdx + 1, high, out_seq) given { orig_seq = orig_seq } yields { out_seq = out_seq };
+    }
+}
+
+yields seq<int> out_seq;
+context_everywhere input != null;
+context_everywhere input.length == size;
+context_everywhere size > 0;
+requires low >= 0 && low <= size;
+requires high >= -1 && high <= size-1;
+context |inp_seq| == size;
+ensures |out_seq| == size;
+context (\forall* int k; k >= 0 && k < size; Perm(input[k], write));
+requires (\forall int k; 0 <= k && k < size; input[k] == inp_seq[k]);
+ensures (\forall int k; 0 <= k && k < size; input[k] == out_seq[k]);
+ensures isPermutation<int>(inp_seq, out_seq);
+int main(int[] input, int size, int low, int high, seq<int> inp_seq){
+    low = 0;
+    high = size - 1;
+    quickSort(input, size, low, high, inp_seq) given { orig_seq = inp_seq } yields { out_seq = out_seq };
+}

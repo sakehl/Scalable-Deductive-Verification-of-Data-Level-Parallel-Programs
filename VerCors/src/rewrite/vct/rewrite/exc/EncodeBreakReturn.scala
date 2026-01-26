@@ -1,0 +1,328 @@
+package vct.col.rewrite.exc
+
+import vct.col.ast._
+import vct.col.rewrite.error.{ExcludedByPassOrder, ExtraNode}
+import vct.col.origin.{
+  AssignLocalOk,
+  LabelContext,
+  Origin,
+  PanicBlame,
+  PreferredName,
+  TrueSatisfiable,
+}
+import vct.col.ref.Ref
+import vct.col.util.AstBuildHelpers._
+import vct.col.rewrite.{Generation, Rewriter, RewriterBuilder}
+import vct.col.util.SuccessionMap
+
+import scala.collection.mutable
+
+case object EncodeBreakReturn extends RewriterBuilder {
+  override def key: String = "breakReturn"
+  override def desc: String =
+    "Encode break and return with goto or with exceptions."
+
+  private def PostLabeledStatementOrigin(label: LabelDecl[_]): Origin =
+    label.o.where(prefix = "break", context = "label after")
+
+  private def ReturnClass: Origin =
+    Origin(Seq(PreferredName(Seq("return")), LabelContext("return exception")))
+
+  private def ReturnField: Origin =
+    Origin(Seq(PreferredName(Seq("value")), LabelContext("return exception")))
+
+  private def ReturnTarget: Origin =
+    Origin(Seq(PreferredName(Seq("end")), LabelContext("method end")))
+
+  private def ReturnVariable: Origin =
+    Origin(Seq(PreferredName(Seq("return")), LabelContext("return value")))
+
+  private def BreakException: Origin =
+    Origin(Seq(PreferredName(Seq("break")), LabelContext("break exception")))
+}
+
+case class EncodeBreakReturn[Pre <: Generation]() extends Rewriter[Pre] {
+  import EncodeBreakReturn._
+
+  def needBreakReturnExceptions(stat: Statement[Pre]): Boolean =
+    stat.exists {
+      case TryCatchFinally(_, Block(Nil), _) => false
+      case TryCatchFinally(_, _, _) => true
+      case _ => false
+    }
+
+  def needReturn(method: AbstractMethod[Pre]): Boolean =
+    method match {
+      case _: Procedure[Pre] => true
+      case _: Constructor[Pre] => false
+      case _: InstanceMethod[Pre] => true
+      case _: InstanceOperatorMethod[Pre] => true
+    }
+
+  case class BreakReturnToGoto(
+      returnTarget: Option[LabelDecl[Post]],
+      resultVariable: Option[Expr[Post]],
+  ) extends Rewriter[Pre] {
+    val breakLabels: mutable.Set[LabelDecl[Pre]] = mutable.Set()
+    val postLabeledStatement: SuccessionMap[LabelDecl[Pre], LabelDecl[Post]] =
+      SuccessionMap()
+
+    override val allScopes: AllScopes[Pre, Post] =
+      EncodeBreakReturn.this.allScopes
+
+    override def dispatch(stat: Statement[Pre]): Statement[Post] = {
+      implicit val o: Origin = stat.o
+      stat match {
+        case Label(decl, stat, contract) =>
+          val newBody = dispatch(stat)
+
+          if (breakLabels.contains(decl)) {
+            postLabeledStatement(decl) =
+              new LabelDecl()(PostLabeledStatementOrigin(decl))
+            Block(Seq(
+              Label(labelDecls.dispatch(decl), Block(Nil), dispatch(contract)),
+              newBody,
+              Label(
+                postLabeledStatement(decl),
+                Block(Nil),
+                LoopInvariant(tt, None)(TrueSatisfiable),
+              ),
+            ))
+          } else {
+            Block(Seq(
+              Label(labelDecls.dispatch(decl), Block(Nil), dispatch(contract)),
+              newBody,
+            ))
+          }
+
+        case Break(None) =>
+          throw ExcludedByPassOrder(
+            "Break statements without a label are made explicit by SpecifyImplicitLabels",
+            Some(stat),
+          )
+
+        case Break(Some(Ref(label))) =>
+          breakLabels += label
+          Goto(postLabeledStatement.ref(label))
+
+        case Return(result) =>
+          Block(Seq(
+            Assign(resultVariable.get, dispatch(result))(AssignLocalOk),
+            Goto(returnTarget.get.ref),
+          ))
+
+        case other => super.dispatch(other)
+      }
+    }
+
+    override def dispatch(contract: LoopContract[Pre]): LoopContract[Post] = {
+      implicit val o: Origin = contract.o
+      resultVariable match {
+        case Some(dp @ DerefPointer(HeapLocal(_))) =>
+          val perm = Perm(ByValueClassLocation(dp), WritePerm())
+          contract match {
+            case inv @ LoopInvariant(invariant, _) =>
+              inv.rewrite(invariant = dispatch(invariant) &* perm)
+            case it @ IterationContract(requires, ensures, _) =>
+              it.rewrite(
+                requires = dispatch(requires) &* perm,
+                ensures = dispatch(ensures) &* perm,
+              )
+            case LLVMLoopContract(_) => throw ExtraNode
+          }
+        case _ => super.dispatch(contract)
+      }
+    }
+  }
+
+  case class BreakReturnToException(
+      returnClass: Option[Class[Post]],
+      valueField: Option[InstanceField[Post]],
+  ) extends Rewriter[Pre] {
+    val breakLabelException: SuccessionMap[LabelDecl[Pre], Class[Post]] =
+      SuccessionMap()
+
+    override val allScopes: AllScopes[Pre, Post] =
+      EncodeBreakReturn.this.allScopes
+
+    override def dispatch(stat: Statement[Pre]): Statement[Post] = {
+      implicit val o: Origin = stat.o
+      stat match {
+        case Label(decl, stat, contract) =>
+          val newBody = dispatch(stat)
+
+          if (breakLabelException.contains(decl)) {
+            TryCatchFinally(
+              body = Block(Seq(
+                Label(
+                  labelDecls.dispatch(decl),
+                  Block(Nil),
+                  dispatch(contract),
+                ),
+                newBody,
+              )),
+              after = Block(Nil),
+              catches = Seq(CatchClause(
+                decl =
+                  new Variable(
+                    TByReferenceClass(breakLabelException.ref(decl), Seq())
+                  ),
+                body = Block(Nil),
+              )),
+            )
+          } else {
+            Block(Seq(
+              Label(labelDecls.dispatch(decl), Block(Nil), dispatch(contract)),
+              newBody,
+            ))
+          }
+
+        case Break(None) =>
+          throw ExcludedByPassOrder(
+            "Break statements without a label are made explicit by SpecifyImplicitLabels",
+            Some(stat),
+          )
+
+        case Break(Some(Ref(label))) =>
+          val cls = breakLabelException.getOrElseUpdate(
+            label,
+            globalDeclarations.declare(
+              new ByReferenceClass[Post](Nil, Nil, Nil, tt)(BreakException)
+            ),
+          )
+
+          Throw(NewObject[Post](cls.ref))(PanicBlame(
+            "The result of NewObject is never null"
+          ))
+
+        case Return(result) =>
+          val exc = new Variable[Post](returnClass.get.classType(Seq()))
+          Scope(
+            Seq(exc),
+            Block(Seq(
+              assignLocal(exc.get, NewObject(returnClass.get.ref)),
+              assignField(
+                exc.get,
+                valueField.get.ref,
+                dispatch(result),
+                PanicBlame("Have write permission immediately after NewObject"),
+              ),
+              Throw(exc.get)(PanicBlame(
+                "The result of NewObject is never null"
+              )),
+            )),
+          )
+
+        case other => super.dispatch(other)
+      }
+    }
+  }
+
+  override def dispatch(decl: Declaration[Pre]): Unit =
+    decl match {
+      case method: AbstractMethod[Pre] =>
+        method.body match {
+          case None => super.dispatch(method)
+          case Some(body) =>
+            allScopes.anyDeclare(allScopes.anySucceedOnly(
+              method,
+              method.rewrite(body = Some({
+                if (needBreakReturnExceptions(body)) {
+                  implicit val o: Origin = body.o
+
+                  if (needReturn(method)) {
+                    val returnField =
+                      new InstanceField[Post](dispatch(method.returnType), Nil)(
+                        ReturnField
+                      )
+                    val returnClass =
+                      new ByReferenceClass[Post](
+                        Nil,
+                        Seq(returnField),
+                        Nil,
+                        tt,
+                      )(ReturnClass)
+                    globalDeclarations.declare(returnClass)
+
+                    val caughtReturn =
+                      new Variable[Post](returnClass.classType(Seq()))
+
+                    TryCatchFinally(
+                      body = BreakReturnToException(
+                        Some(returnClass),
+                        Some(returnField),
+                      ).dispatch(body),
+                      catches = Seq(CatchClause(
+                        caughtReturn,
+                        Return(Deref[Post](caughtReturn.get, returnField.ref)(
+                          PanicBlame(
+                            "Permission for the field of a return exception cannot be non-write, as the class is only instantiated at a return site, and caught immediately."
+                          )
+                        )),
+                      )),
+                      after = Block(Nil),
+                    )
+                  } else { BreakReturnToException(None, None).dispatch(body) }
+                } else {
+                  implicit val o: Origin = body.o
+
+                  if (needReturn(method)) {
+                    val resultTarget = new LabelDecl[Post]()(ReturnTarget)
+
+                    if (method.returnType.asByValueClass.isDefined) {
+                      val v =
+                        new LocalHeapVariable(
+                          TNonNullPointer(dispatch(method.returnType), None)
+                        )(ReturnVariable)
+                      val getter =
+                        v.get(PanicBlame("Missing access to return variable"))(
+                          ReturnVariable
+                        )
+                      val newBody = BreakReturnToGoto(
+                        Some(resultTarget),
+                        Some(getter),
+                      ).dispatch(body)
+                      Scope(
+                        Nil,
+                        Block(Seq(
+                          HeapLocalDecl(v),
+                          newBody,
+                          Label(
+                            resultTarget,
+                            Block(Nil),
+                            LoopInvariant(tt, None)(TrueSatisfiable),
+                          ),
+                          Return(getter),
+                        )),
+                      )
+                    } else {
+                      val v =
+                        new Variable(dispatch(method.returnType))(
+                          ReturnVariable
+                        )
+                      val getter = v.get(ReturnVariable)
+                      val newBody = BreakReturnToGoto(
+                        Some(resultTarget),
+                        Some(getter),
+                      ).dispatch(body)
+                      Scope(
+                        Seq(v),
+                        Block(Seq(
+                          newBody,
+                          Label(
+                            resultTarget,
+                            Block(Nil),
+                            LoopInvariant(tt, None)(TrueSatisfiable),
+                          ),
+                          Return(getter),
+                        )),
+                      )
+                    }
+                  } else { BreakReturnToGoto(None, None).dispatch(body) }
+                }
+              })),
+            ))
+        }
+      case other => super.dispatch(other)
+    }
+}

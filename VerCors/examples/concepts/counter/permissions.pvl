@@ -1,0 +1,19 @@
+// -*- tab-width:2 ; indent-tabs-mode:nil -*-
+// stand alone test case:
+//:: cases Permissions
+//:: tools silicon
+//:: verdict Pass
+// included in the following test cases:
+//:: cases Parameters1 Parameters2 LoopPVL MainPVL
+//begin(all)
+class Counter {
+  int x;
+  
+  requires Perm(x,1);
+  ensures  Perm(x,1) ** x==\old(x)+1;
+  void incr(){
+    x=x+1;
+  } 
+}
+//end(all)
+

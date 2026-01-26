@@ -1,0 +1,57 @@
+\begin{tabular}[t]{lll|rrr|rrr|r}
+\hline
+ & & & \multicolumn{3}{c|}{\textbf{Base}} & \multicolumn{3}{c|}{\textbf{Qualifiers}} & \\
+\textbf{Name} & \textbf{V} & \textbf{Result} & \textbf{\#} & \textbf{T} & $\mathbf{\sigma_{mean}}$ & \textbf{\#} & \textbf{T} & $\mathbf{\sigma_{mean}}$ & \textbf{Speedup} \\
+\hline
+blur\ & 0& \checkmark&  10 &  13 & 1&  10&  10 & 1& \cellcolor{ForestGreen!25} 1.3 \\
+\hline
+ & 1& \checkmark&  10 &  13 & 1&  10&  10 & 1& \cellcolor{ForestGreen!25} 1.3 \\
+\hline
+ & 2& \checkmark&  10 &  17 & 1&  10&  14 & 3& \cellcolor{ForestGreen!25} 1.2 \\
+\hline
+ & 3& \checkmark&  10 &  14 & 1&  10&  11 & 1& \cellcolor{ForestGreen!25} 1.4 \\
+\hline
+hist\ & 0& \checkmark&  10 &  22 & 1&  10&  15 & 1& \cellcolor{ForestGreen!25} 1.5 \\
+\hline
+ & 1& \checkmark&  10 &  27 & 1&  10&  20 & 2& \cellcolor{ForestGreen!25} 1.4 \\
+\hline
+ & 2& \checkmark&  10 &  36 & 1&  10&  32 & 10& \cellcolor{ForestGreen!25} 1.1 \\
+\hline
+ & 3& \checkmark&  10 &  46 & 1&  10&  29 & 2& \cellcolor{ForestGreen!25} 1.6 \\
+\hline
+conv\_layer\ & 0& \checkmark&  10 &  144 & 2&  10&  60 & 6& \cellcolor{ForestGreen!25} 2.4 \\
+\hline
+ & 1& \checkmark&  10 &  162 & 1&  10&  65 & 1& \cellcolor{ForestGreen!25} 2.5 \\
+\hline
+ & 2& \checkmark&  10 &  220 & 3&  10&  74 & 5& \cellcolor{ForestGreen!25} 3.0 \\
+\hline
+ & 3& \checkmark&  10 &  201 & 2&  10&  72 & 5& \cellcolor{ForestGreen!25} 2.8 \\
+\hline
+gemm\ & 0& \checkmark&  10 &  56 & 1&  10&  21 & 1& \cellcolor{ForestGreen!25} 2.6 \\
+\hline
+ & 1& \checkmark&  10 &  110 & 1&  10&  35 & 1& \cellcolor{ForestGreen!25} 3.2 \\
+\hline
+ & 2& \checkmark&  10 &  152 & 8&  10&  53 & 6& \cellcolor{ForestGreen!25} 2.9 \\
+\hline
+ & 3& Error& 10 &  & & 10 &  &  \\
+\hline
+auto\_viz\ & 0& \checkmark&  10 &  18 & 1&  10&  21 & 4& \cellcolor{BrickRed!25} 0.9 \\
+\hline
+ & 1& \checkmark&  9 &  34 & 1&  10&  45 & 10& \cellcolor{ForestGreen!25} 1.3 \\
+& & \ding{55}& 1 & 266 & -& 0 &  &  \\
+\hline
+ & 2& \checkmark&  10 &  36 & 1&  10&  39 & 10& \cellcolor{BrickRed!25} 0.9 \\
+\hline
+ & 3& \checkmark&  10 &  34 & 1&  10&  28 & 1& \cellcolor{ForestGreen!25} 1.2 \\
+\hline
+\multicolumn{2}{l}{bilateral\_grid}& \checkmark&  10 &  48 & 1&  10&  39 & 1& \cellcolor{ForestGreen!25} 1.2 \\
+\hline
+\multicolumn{2}{l}{camera\_pipe}& \checkmark&  10 &  205 & 7&  10&  122 & 14& \cellcolor{ForestGreen!25} 1.7 \\
+\hline
+\multicolumn{2}{l}{depthwise\_}& \checkmark&  10 &  201 & 2&  10&  143 & 1& \cellcolor{ForestGreen!25} 1.4 \\
+separable\_conv & & & & & & & & \\
+\hline
+\hline
+Total & & & & 1831 & 26  & & 956 & 26  & \cellcolor{ForestGreen!25} 1.9  \\
+\hline
+\end{tabular}
