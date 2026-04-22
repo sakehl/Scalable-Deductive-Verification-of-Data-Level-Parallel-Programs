@@ -58,6 +58,49 @@ def parse_existing_results(output_xml):
             print(f"Error parsing existing results: {e}")
     return existing_results
 
+def format_remaining_time(seconds):
+    if seconds is None:
+        return "?"
+
+    total_minutes = int((seconds + 59) // 60)
+    if total_minutes <= 0:
+        return "0m"
+    if total_minutes > 60:
+        total_hours = int((total_minutes + 59) // 60)
+        remaining_minutes = int((total_minutes + 59) % 60)
+        return f"{total_hours:2d}h{remaining_minutes:02d}m"
+    return f"   {total_minutes:02d}m"
+
+def collect_i0_durations(output_xml_files, input_files, timeout):
+    i0_times = []
+    tags = ["unique-const-extract", "unique", "const", "extract", "normal"]
+    total_time = 0.0
+    for l in [1, 2]:
+        existing_results = parse_existing_results(output_xml_files[l])
+        for t in tags:
+            for input_file in input_files[l]:
+                averages = []
+                for i in range(10):
+                    if (str(i), t, input_file) in existing_results:
+                        result = existing_results[(str(i), t, input_file)]
+                        backend_time = extract_backend_duration(result['stdout'])
+                        time = extract_total_duration(result['stdout'])
+                        parse_time = time - backend_time
+                        time = parse_time + min(backend_time, float(timeout))
+                        averages.append(time)
+                if averages:
+                    avg_time = sum(averages) / len(averages)
+                    i0_times.append(avg_time)
+                    total_time += avg_time
+    return i0_times
+
+def estimate_remaining_seconds_from_i0(i0_times, current):
+    if not i0_times or current < 0:
+        return None
+
+    return sum(i0_times[current:])
+    
+
 def remove_entry(output_xml, i, tags, input_file, only_if_error=False):
     """Remove a specific entry from the results XML file."""
     if not os.path.exists(output_xml):
@@ -95,9 +138,25 @@ def remove_entry(output_xml, i, tags, input_file, only_if_error=False):
     except Exception as e:
         print(f"Error removing entry: {e}")
         return False
+    
+def extract_backend_duration(stdout):
+    match = re.search(r"Done: BackendVerification \(at [^,]+, duration: (\d+):(\d+):(\d+)\)", stdout)
+    if match:
+        hours, minutes, seconds = map(int, match.groups())
+        return hours * 3600 + minutes * 60 + seconds
+    return None
 
-def main(input_files, i, command_template, output_xml, tags, timeout):
+def extract_total_duration(stdout):
+    match = re.search(r"Done: VerCors \(at [^,]+, duration: (\d+):(\d+):(\d+)\)", stdout)
+    if match:
+        hours, minutes, seconds = map(int, match.groups())
+        return hours * 3600 + minutes * 60 + seconds
+    return None
+
+def main(input_files, i, command_template, output_xml, tags, timeout, i0_times):
     existing_results = parse_existing_results(output_xml)
+    global current
+    global total
     
     # Read existing results.xml if it exists
     if os.path.exists(output_xml):
@@ -115,6 +174,13 @@ def main(input_files, i, command_template, output_xml, tags, timeout):
         if group.find('i').text == str(i) and group.find('tags').text == tags:
             group_element = group
             break
+
+    result_dict = {
+        '0': "✓",
+        '1': "✗",
+        '2': "-",
+        '3': "T.O."
+    }
     
     # Add a new group for the current run if it does not exist
     if group_element is None:
@@ -124,10 +190,18 @@ def main(input_files, i, command_template, output_xml, tags, timeout):
         root.append(group_element)
     
     for input_file in input_files:
-        print(f"Processing file ({tags}): {input_file}, i={i}")
+        remaining_seconds = estimate_remaining_seconds_from_i0(i0_times, current-1)
+        remaining_label = format_remaining_time(remaining_seconds)
+        name = f"'{input_file}'"
+        print(f"[{current:3}/{total}, {remaining_label}] Verifying {name:17} ... ", end="", flush=True)
+        current += 1
         if (str(i), tags, input_file) in existing_results:
             result = existing_results[(str(i), tags, input_file)]
-            print(f"  Skipping for i={i} and tags={tags}. Original result: {result['return_code']}")
+            backend_time = extract_backend_duration(result['stdout'])
+            backend_time = str(backend_time) + 's' if backend_time is not None else ''
+            time = extract_total_duration(result['stdout'])
+            time = str(time) + 's' if time is not None else ''
+            print(f"{result_dict[result['return_code']]:>4} {time:>5} (backend: {backend_time:>5}) (stored result)")
         else:
             command = command_template.format(input_file=input_file, vct=VCT, timeout=timeout)
             return_code, elapsed_time, stdout, stderr = run_command(command)
@@ -137,7 +211,11 @@ def main(input_files, i, command_template, output_xml, tags, timeout):
             file_element.append(create_xml_element("elapsed_time", str(elapsed_time)))
             file_element.append(create_xml_element("stdout", stdout))
             file_element.append(create_xml_element("stderr", stderr))
-            print(f"  Return code was: {return_code}")
+            backend_time = extract_backend_duration(stdout)
+            backend_time = str(backend_time) + 's' if backend_time is not None else ''
+            time = extract_total_duration(stdout)
+            time = str(time) + 's' if time is not None else ''
+            print(f"{result_dict[str(return_code)]:>4} {time:>5} (backend: {backend_time:>5})")
             group_element.append(file_element)
         
         # Update the XML file after each file is processed
@@ -148,13 +226,8 @@ def main(input_files, i, command_template, output_xml, tags, timeout):
     with open(output_xml, "w") as xml_file:
         xml_file.write(prettify_xml(root))
 
-def experiments(output_xml, i, level=1, unique=False, const=False, extract=False,
-                input_files=None, timeout=3600):
-    if(input_files is None):
-        # Read input files from a file
-        with open(f'experiments{level}.txt', 'r') as file:
-            input_files = [line.strip() for line in file.readlines()]
-        input_files = [f"level{level}/{file}" for file in input_files]
+def experiments(output_xml, i, input_files, unique=False, const=False, extract=False,
+                timeout=3600, i0_times=None):
 
     command_template = f"{{vct}} --silicon-quiet --dev-time-backend --dev-total-timeout={timeout} --dev-assert-timeout 60 --target x86_64-linux-gnu {{input_file}}"
     first = False
@@ -184,7 +257,9 @@ def experiments(output_xml, i, level=1, unique=False, const=False, extract=False
     else:
         tags = "normal"
 
-    main(input_files, i, command_template, output_xml, tags, timeout=timeout)
+    if i0_times is None:
+        i0_times = []
+    main(input_files, i, command_template, output_xml, tags, timeout=timeout, i0_times=i0_times)
 
 def clean_errors(output_xml):
     existing_results = parse_existing_results(output_xml)
@@ -200,6 +275,7 @@ def clean_timeouts(output_xml):
 
 if __name__ == "__main__":
 
+    # default_timestamp = "2026-04-23"
     default_timestamp = "2025-12-14"
     parser = argparse.ArgumentParser(description='Run experiments for CLBlast with Vercors verification.')
     parser.add_argument('--timestamp', 
@@ -247,13 +323,36 @@ if __name__ == "__main__":
     assert timeout > 0
 
     # input_files = ["level2/xger.cl", "level2/xher.cl", "level2/xher2.cl", "level2/xtrsv.cl"]
-    input_files = None
+    input_files = {}
+    global total
+    total = 0
+    
+    # Read input files from a file
+    for l in [1, 2]:
+        with open(f'experiments{l}.txt', 'r') as file:
+            input_files[l] = [line.strip() for line in file.readlines()]
+            input_files[l] = [f"level{l}/{file}" for file in input_files[l]]
+            total += len(input_files[l])
+    total = 5 * total * repetitions
+    global current
+    current = 1
+
+    result_files = {l : f"results/exp-level{l}-2025-12-14.xml" for l in [1, 2]}
+    i0_times = collect_i0_durations(result_files, input_files, timeout)
+    i0_times = i0_times * repetitions
+    
+    print(f"Total experiments to run is {total}. Estimated time: {format_remaining_time(sum(i0_times))}")
     for i in range(repetitions):
       for l in [1, 2]:
         file = f"results/exp-level{l}-{timestamp}.xml"
-        experiments(file, i, level=l, unique=True, const=True, extract=True, input_files=input_files,timeout=timeout)
-        experiments(file, i, level=l, unique=True, input_files=input_files,timeout=timeout)
-        experiments(file, i, level=l, const=True, input_files=input_files,timeout=timeout)
-        experiments(file, i, level=l, extract=True, input_files=input_files,timeout=timeout)
-        experiments(file, i, level=l, input_files=input_files,timeout=timeout)
+        print(f"Running experiments for level {l} (i={i}, tags=unique-const-extract)...")
+        experiments(file, i, input_files[l], unique=True, const=True, extract=True, timeout=timeout, i0_times=i0_times)
+        print(f"Running experiments for level {l} (i={i}, tags=unique)...")
+        experiments(file, i, input_files[l], unique=True, timeout=timeout, i0_times=i0_times)
+        print(f"Running experiments for level {l} (i={i}, tags=const)...")
+        experiments(file, i, input_files[l], const=True, timeout=timeout, i0_times=i0_times)
+        print(f"Running experiments for level {l} (i={i}, tags=extract)...")
+        experiments(file, i, input_files[l], extract=True, timeout=timeout, i0_times=i0_times)
+        print(f"Running experiments for level {l} (i={i}, tags=normal)...")
+        experiments(file, i, input_files[l], timeout=timeout, i0_times=i0_times)
     

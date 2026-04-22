@@ -9,7 +9,7 @@ package «QuantifierLean» where
   -- add any additional package configuration options here
 
 require mathlib from git
-  "https://github.com/leanprover-community/mathlib4.git" @ "v4.11.0-rc1"
+  "https://github.com/leanprover-community/mathlib4.git" @ "5025874dc5f9f8dd1598190e60ef20dda7b42566"
 
 @[default_target]
 lean_lib «QuantifierLean» where
