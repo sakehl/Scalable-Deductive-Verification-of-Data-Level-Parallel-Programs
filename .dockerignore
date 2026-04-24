@@ -1,0 +1,17 @@
+.git
+.gitignore
+.vscode/
+
+dependencies/
+*.tar
+*.tar.gz
+!dependencies.tar.gz
+
+vercors/out/
+
+LeanProof/.lake/build/
+
+**/*.log.txt
+**/.DS_Store
+**/__pycache__/
+**/*.pyc

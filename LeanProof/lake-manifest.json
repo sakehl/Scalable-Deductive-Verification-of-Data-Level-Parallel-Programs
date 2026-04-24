@@ -68,7 +68,7 @@
    "rev": "5025874dc5f9f8dd1598190e60ef20dda7b42566",
    "name": "mathlib",
    "manifestFile": "lake-manifest.json",
-   "inputRev": "v4.11.0-rc1",
+   "inputRev": "5025874dc5f9f8dd1598190e60ef20dda7b42566",
    "inherited": false,
    "configFile": "lakefile.lean"}],
  "name": "QuantifierLean",

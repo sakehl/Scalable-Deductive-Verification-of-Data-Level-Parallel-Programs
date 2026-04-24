@@ -5,17 +5,22 @@ from datetime import datetime
 import os
 import argparse
 import re
+import shutil
+import shlex
 
 DIR = os.path.dirname(os.path.abspath(__file__))
-VCT = f"/home/lars/data/vercors/bin/vct"
+VCT = shutil.which("vct") or "vct"
 
 def run_command(command):
     start_time = time.time()
-    process = subprocess.Popen(command, stdout=subprocess.PIPE, stderr=subprocess.PIPE, shell=True)
+    # Avoid shell-specific behavior differences; run as argv for stable stdout/stderr capture.
+    if isinstance(command, str):
+        command = shlex.split(command)
+    process = subprocess.Popen(command, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
     stdout, stderr = process.communicate()
     end_time = time.time()
     elapsed_time = end_time - start_time
-    return process.returncode, elapsed_time, stdout.decode(), stderr.decode()
+    return process.returncode, elapsed_time, stdout.decode(errors='replace'), stderr.decode(errors='replace')
 
 def sanitize_text(text: str) -> str:
   if text is None:
@@ -140,6 +145,8 @@ def remove_entry(output_xml, i, tags, input_file, only_if_error=False):
         return False
     
 def extract_backend_duration(stdout):
+    if stdout is None:
+        return None
     match = re.search(r"Done: BackendVerification \(at [^,]+, duration: (\d+):(\d+):(\d+)\)", stdout)
     if match:
         hours, minutes, seconds = map(int, match.groups())
@@ -147,6 +154,8 @@ def extract_backend_duration(stdout):
     return None
 
 def extract_total_duration(stdout):
+    if stdout is None:
+        return None
     match = re.search(r"Done: VerCors \(at [^,]+, duration: (\d+):(\d+):(\d+)\)", stdout)
     if match:
         hours, minutes, seconds = map(int, match.groups())
@@ -205,16 +214,22 @@ def main(input_files, i, command_template, output_xml, tags, timeout, i0_times):
         else:
             command = command_template.format(input_file=input_file, vct=VCT, timeout=timeout)
             return_code, elapsed_time, stdout, stderr = run_command(command)
+            combined_output = f"{stdout}\n{stderr}" if stderr else stdout
             file_element = ET.Element("file")
             file_element.append(create_xml_element("name", input_file))
             file_element.append(create_xml_element("return_code", str(return_code)))
             file_element.append(create_xml_element("elapsed_time", str(elapsed_time)))
             file_element.append(create_xml_element("stdout", stdout))
             file_element.append(create_xml_element("stderr", stderr))
-            backend_time = extract_backend_duration(stdout)
+            backend_time = extract_backend_duration(combined_output)
             backend_time = str(backend_time) + 's' if backend_time is not None else ''
-            time = extract_total_duration(stdout)
+            time = extract_total_duration(combined_output)
             time = str(time) + 's' if time is not None else ''
+            if not return_code in [0,1,2,3]:
+                print("Error occured")
+                print(stdout)
+                print(stderr)
+                exit()
             print(f"{result_dict[str(return_code)]:>4} {time:>5} (backend: {backend_time:>5})")
             group_element.append(file_element)
         
@@ -275,8 +290,8 @@ def clean_timeouts(output_xml):
 
 if __name__ == "__main__":
 
-    # default_timestamp = "2026-04-23"
-    default_timestamp = "2025-12-14"
+    default_timestamp = "2026-04-23"
+    # default_timestamp = "2025-12-14"
     parser = argparse.ArgumentParser(description='Run experiments for CLBlast with Vercors verification.')
     parser.add_argument('--timestamp', 
                        default=default_timestamp, 
@@ -331,25 +346,28 @@ if __name__ == "__main__":
     for l in [1, 2]:
         with open(f'experiments{l}.txt', 'r') as file:
             input_files[l] = [line.strip() for line in file.readlines()]
-            input_files[l] = [f"level{l}/{file}" for file in input_files[l]]
+            input_files[l] = [os.path.join(f"level{l}", file) for file in input_files[l]]
             total += len(input_files[l])
     total = 5 * total * repetitions
     global current
     current = 1
 
-    result_files = {l : f"results/exp-level{l}-2025-12-14.xml" for l in [1, 2]}
-    i0_times = collect_i0_durations(result_files, input_files, timeout)
+    old_result_files = {l : os.path.join("results", f"exp-level{l}-2025-12-14.xml") 
+                        for l in [1, 2]}
+    result_files = {l : os.path.join("results", f"exp-level{l}-{timestamp}.xml")
+                        for l in [1, 2]}
+    i0_times = collect_i0_durations(old_result_files, input_files, timeout)
     i0_times = i0_times * repetitions
     
     print(f"Total experiments to run is {total}. Estimated time: {format_remaining_time(sum(i0_times))}")
     for i in range(repetitions):
       for l in [1, 2]:
-        file = f"results/exp-level{l}-{timestamp}.xml"
-        print(f"Running experiments for level {l} (i={i}, tags=unique-const-extract)...")
+        file = result_files[l]
+        print(f"Running experiments for level {l} (i={i}, tags=unique-immutable-extract)...")
         experiments(file, i, input_files[l], unique=True, const=True, extract=True, timeout=timeout, i0_times=i0_times)
         print(f"Running experiments for level {l} (i={i}, tags=unique)...")
         experiments(file, i, input_files[l], unique=True, timeout=timeout, i0_times=i0_times)
-        print(f"Running experiments for level {l} (i={i}, tags=const)...")
+        print(f"Running experiments for level {l} (i={i}, tags=immutable)...")
         experiments(file, i, input_files[l], const=True, timeout=timeout, i0_times=i0_times)
         print(f"Running experiments for level {l} (i={i}, tags=extract)...")
         experiments(file, i, input_files[l], extract=True, timeout=timeout, i0_times=i0_times)

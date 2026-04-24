@@ -3,13 +3,13 @@ import Mathlib.Tactic
 
 open Mathlib
 
--- FinRange n is the numbers from 0 to n exclusive, in increasing order.
--- FinRange 5 = [0, 1, 2, 3, 4]
+/-- FinRange n is the numbers from 0 to n exclusive, in increasing order.
+    FinRange 5 = [0, 1, 2, 3, 4] -/
 def Vector.FinRange (n : Nat) : Vector (Fin n) n :=
   ⟨(List.range n).pmap (fun i h => ⟨i, h⟩) (by simp), by simp⟩
 
--- FinSet n is the numbers from 0 to n exclusive
--- FinSet 5 = {0, 1, 2, 3, 4}
+/-- FinSet n is the numbers from 0 to n exclusive
+    FinSet 5 = {0, 1, 2, 3, 4} -/
 def Fin.FinSet (n: Nat): Finset (Fin n) :=
   Finset.attachFin (Finset.range n) (by intro m; simp)
 

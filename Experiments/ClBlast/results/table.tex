@@ -12,8 +12,8 @@
 \newcommand{\haliver}{HaliVer}
 \begin{table}[t]
 \centering
-\input{/home/lars/data/Improved-Deductive-Verification-of-Parallel-Programs---CAV2026/experiments/ClBlast/results/blas_level1.tex}
-\input{/home/lars/data/Improved-Deductive-Verification-of-Parallel-Programs---CAV2026/experiments/ClBlast/results/blas_level2.tex}
+\input{/home/cav/haliver/Experiments/ClBlast/results/blas_level1.tex}
+\input{/home/cav/haliver/Experiments/ClBlast/results/blas_level2.tex}
 \caption{\label{tab:blas-results}Verification results for the clBLAS GPU kernels for level 1 and 2. 
 \textbf{Base} is the baseline configuration without any extra features. It is compared against versions with unique type qualifiers (\textbf{Unique}), immutable arrays (\textbf{Immutable}), extracted kernel bodies (\textbf{Extract}), and a configuration enabling all features simultaneously (\textbf{All}).
 The $\dagger$ indicates we (try to) prove functional correctness in addition to memory safety.
@@ -26,8 +26,8 @@ $\#_{imm}$ and $\#_p$ is the number of immutable and normal pointer arrays, resp
 \end{figure}
 \begin{figure}[t]
 \centering
-\subfloat[\label{fig:blas-barplot-level1}Level 1]{\includegraphics[width=0.95\textwidth]{/home/lars/data/Improved-Deductive-Verification-of-Parallel-Programs---CAV2026/experiments/ClBlast/results/blas_level1_barplot.pdf}}\\
-\subfloat[\label{fig:blas-barplot-level2}Level 2]{\includegraphics[width=0.95\textwidth]{/home/lars/data/Improved-Deductive-Verification-of-Parallel-Programs---CAV2026/experiments/ClBlast/results/blas_level2_barplot.pdf}}
+\subfloat[\label{fig:blas-barplot-level1}Level 1]{\includegraphics[width=0.95\textwidth]{/home/cav/haliver/Experiments/ClBlast/results/blas_level1_barplot.pdf}}\\
+\subfloat[\label{fig:blas-barplot-level2}Level 2]{\includegraphics[width=0.95\textwidth]{/home/cav/haliver/Experiments/ClBlast/results/blas_level2_barplot.pdf}}
 \caption{\label{fig:blas-results}Verification backend times for the clBLAS GPU kernels for level 1 and 2, normalized so Base=100\%. \textbf{Base} is the baseline configuration without any extra features. It is compared against versions with unique type qualifiers (\textbf{Unique}), immutable arrays (\textbf{Immutable}), extracted kernel bodies (\textbf{Extract}), and a configuration enabling all features simultaneously (\textbf{All}). Bars show mean with standard error of the mean. Below the bars: \checkmark = 10/10 successful, \ding{55}  = 0/10 successful, else number of successful runs out of 10. Next to base bars: average time in seconds of the 10 base runs. The $\dagger$ indicates we (try to) prove functional correctness in addition to memory safety.}
 \end{figure}
 \end{document}

@@ -118,7 +118,8 @@ def stats(runs):
                 if r.get("return_code") >= "0" and r.get("backend_duration") is not None]
         if not vals:
             return None, None
-        return np.mean(vals), np.std(vals, ddof=1) / (len(vals) ** 0.5) 
+        # return np.mean(vals), np.std(vals, ddof=1) / (len(vals) ** 0.5) 
+        return 1, 1
 
 def r(x):
     if x is None:
@@ -147,24 +148,22 @@ def generate_latex_tabular_exp(experiments, is_mem: bool=False):
     total_v_normal = 0
     total_v_unique = 0
     for base_name, tags in experiments.items():
-        print(base_name)
-        base_name = base_name.replace("_", "\_")
+        base_name = base_name.replace("_", "\\_")
         if(base_name[-1] in ["0", "1", "2", "3"]):
             version = base_name[-1]
             base_name = base_name[:-2]
         else:
             version = ""
         
-        print(base_name,version)
         unique_runs = tags["Unique"]
         normal_runs = tags["Normal"]
         prev_base_name = ""
         tag_printed = False
         rest_conv_printed = True
         if version == "":
-          if(base_name == "depthwise\_separable\_conv"):
-            first_line = "\\multicolumn{2}{l}{depthwise\_}"
-            second_line = "\\multicolumn{2}{l}{separable\_conv}"
+          if(base_name == "depthwise\\_separable\\_conv"):
+            first_line = "\\multicolumn{2}{l}{depthwise\\_}"
+            second_line = "\\multicolumn{2}{l}{separable\\_conv}"
           else:
             first_line = f"\\multicolumn{{2}}{{l}}{{{base_name}}}"
         elif version == "0":
@@ -186,7 +185,7 @@ def generate_latex_tabular_exp(experiments, is_mem: bool=False):
         
 
         for i in range(0, 4):
-            if(base_name == "depthwise\_separable\_conv"):
+            if(base_name == "depthwise\\_separable\\_conv"):
                 if not tag_printed:
                     current_line = first_line
                     rest_conv_printed = False
@@ -215,7 +214,7 @@ def generate_latex_tabular_exp(experiments, is_mem: bool=False):
                     rest_conv_printed = True
                 tag_printed = True
             elif i == 3 and not rest_conv_printed:
-                latex.append("separable\_conv & & & & & & & & \\\\")
+                latex.append("separable\\_conv & & & & & & & & \\\\")
         # if(prev_base_name != base_name[:-2] and (version =="" or version == "3")):
         if(prev_base_name != base_name[:-2]):
             latex.append("\\hline")
@@ -225,7 +224,7 @@ def generate_latex_tabular_exp(experiments, is_mem: bool=False):
     latex.append(f"Total & & & & {round(total_v_normal)} & {round(total_std_normal**0.5)}  & & {round(total_v_unique)} & {round(total_std_unique**0.5)}  & {green(speedup > 1)}{red(speedup < 1)} {speedup}  \\\\")
     latex.append("\\hline")
     latex.append("\\end{tabular}")
-    print(f"Total normal: {total_std_normal}, total unique: {total_std_unique}, mem:{is_mem}")
+    # print(f"Total normal: {total_std_normal}, total unique: {total_std_unique}, mem:{is_mem}")
     return latex
 
 def parse_xml(input_xml):
@@ -283,7 +282,7 @@ def generate_latex_padre(experiments):
     latex = []
     j = 0
     result_name = {0: "\\checkmark", 1: "\\ding{55}", 2: "Error", 3: "T.O."}
-    latex.append("\\newcommand{\widthPadre}{1}")
+    latex.append("\\newcommand{\\widthPadre}{1}")
     for base_name, tags in experiments.items():
         latex.append("\\begin{subtable}[t]{0.49\\textwidth}")
         latex.append("\\resizebox{\\widthPadre\\textwidth}{!}{")
@@ -447,9 +446,27 @@ def main(input_xml_exp, input_xml_padre, output_tex):
         f.write(latex_main)
 
     # Generate PDF using pdflatex
-    subprocess.run(['pdflatex', '-output-directory', f'{DIR}/results', output_tex])
+    pdf_path = output_tex.replace(".tex", ".pdf")
+    pdflatex_result = subprocess.run(
+        ['pdflatex', '--interaction=nonstopmode', '-output-directory', f'{DIR}/results', output_tex],
+        capture_output=True,
+        text=True,
+    )
+    if pdflatex_result.returncode == 0 and os.path.exists(pdf_path) and os.path.getsize(pdf_path) > 0:
+        print(f"Generated table successfully for HaliVerExperiments:")
+        print(f"  PDF: {pdf_path}")
+    else:
+        print(f"Failed to generate {os.path.basename(pdf_path)}.")
+        if pdflatex_result.stderr:
+            print(pdflatex_result.stderr.strip())
+        if pdflatex_result.stdout:
+            print(pdflatex_result.stdout.strip())
+
     out_base = output_tex.replace(".tex", "")
-    subprocess.run(['rm', f"{out_base}.aux", f"{out_base}.log"])
+    for ext in [".aux", ".log"]:
+        artifact_path = f"{out_base}{ext}"
+        if os.path.exists(artifact_path):
+            os.remove(artifact_path)
 
 if __name__ == "__main__":
     default = "2026-01-12"

@@ -2,6 +2,8 @@ import Mathlib.Data.Vector.Defs
 
 import QuantifierLean.Definitions
 import QuantifierLean.Lemmas
+/-! Contains the main results and equivalence theorems for the
+    quantifier transformations -/
 
 open Mathlib
 
@@ -18,14 +20,14 @@ theorem f_inv_on' {a l: Vector Int (k+1)} (p: Props a n):
   rw [Y3_subset_Y2']
   apply Set.inter_subset_left
 
--- Proves the main equivalence theorem
+/-- Proves the main equivalence theorem -/
 theorem equiv_quantifier'
-  -- a is the array (length k+1) with the coefficients a_i for each x_i,
-  -- l is the array (length k+1) with the lower bounds for each x_i
+  -- a is the vector (length k+1) with the coefficients a_i for each x_i,
+  -- l is the vector (length k+1) with the lower bounds for each x_i
   (a l: Vector Int (k+1))
   (n: Int) -- n is the upper bound for the last element
-  (C: Vector Int (k+1) → Prop)  -- C is an arbitrary condition on the quantifier
-  (p: Props a n) -- p encodes the properties on a and n
+  (C: Vector Int (k+1) → Prop)  -- C is an arbitrary condition on the quantifier (its argument is vector xs)
+  (p: Props a n) -- Props encodes that n is positive and that all a_i have the same sign and are non zero.
   {α: Type} -- α is an arbitrary type, which models the values in the array/arbitrary data structure
   (A: Int → α) -- This models an array/arbitrary data structure which is indexed by an integer
   (R: α → Vector Int (k+1) → Prop): -- This models a random (boolean)function, which takes an array value
@@ -37,3 +39,5 @@ theorem equiv_quantifier'
   apply equiv_quantifier
   apply (f_inv_on' p)
   apply (f_bij_on' p)
+
+#print axioms equiv_quantifier'

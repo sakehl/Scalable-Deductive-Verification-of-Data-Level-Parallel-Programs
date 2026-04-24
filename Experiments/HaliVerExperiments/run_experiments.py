@@ -5,10 +5,11 @@ from datetime import datetime
 import os
 import argparse
 import re
+import shutil
 
 DIR = os.path.dirname(os.path.abspath(__file__))
-VCT = f"../../../vercors/bin/vct"
-BUILD = f"{DIR}/build"
+VCT = shutil.which("vct")
+BUILD = os.path.join(DIR, "build")
 
 def run_command(command):
     start_time = time.time()
@@ -194,6 +195,11 @@ def main(input_files, i, command_template, output_xml, tags, timeout, i0_times):
             backend_time = str(backend_time) + 's' if backend_time is not None else ''
             total_time = extract_total_duration(stdout)
             total_time = str(total_time) + 's' if total_time is not None else ''
+            if not return_code in [0,1,2,3]:
+                print("Error occured")
+                print(stdout)
+                print(stderr)
+                exit()
             print(f"{result_dict.get(str(return_code), str(return_code)):>4} {total_time:>5} (backend: {backend_time:>5})")
             group_element.append(file_element)
         
@@ -294,8 +300,8 @@ if __name__ == "__main__":
     assert repetitions > 0
     assert timeout > 0
 
-    exp_file = f"results/exp-{timestamp}.xml"
-    padre_file = f"results/padre-{timestamp}.xml"
+    exp_file = os.path.join("results", f"exp-{timestamp}.xml")
+    padre_file = os.path.join("results", f"padre-{timestamp}.xml")
 
     run_configs = [
         ("experiments", {"non_unique": False, "mem": False}, exp_file),

@@ -6,39 +6,51 @@ open Mathlib
 
 
 -- Definitions
+/-- This is the access of the array, i.e. `f(x_0, .., x_{k-1}) = a_0*x_0 + a_1*x_1 + ... + a_{k-1}*x_{k-1} + b`-/
 def f (b: Int) (as xs:  Vector Int k) : Int :=
   b + ∑ i ∈ Fin.FinSet k, as.get i * xs.get i
 
+/-- Helper definition for f_inv, computes the value of each x_i given an x'-/
 def base (off: Int) (as: Mathlib.Vector Int (k+1)) (x': Int) : (i: Fin (k+1)) → Int
   | 0 => |x'-off|
   | ⟨i+1, lt⟩ =>
     let i' : Fin (k+1) := ⟨i, Nat.lt_trans (Nat.lt_add_one i) lt⟩
     base off as x' i' % as.get i'
 
+/-- The inverse of f, i.e. given x' = f b a xs, we can compute xs = f_inv (offset b a l) a l x'-/
 def f_inv (off: Int) (as ls: Mathlib.Vector Int (k+1)) (x': Int): Vector Int (k+1) :=
   (Vector.fin_range (k+1)).map fun i => base off as x' i / |as.get i| + ls.get i
 
+/-- Product sum of two vectors, i.e. `a_0*x_0 + a_1*x_1 + ... + a_{k-1}*x_{k-1}`-/
 def prodSum: Mathlib.Vector Int k → Mathlib.Vector Int k → Int
   | ⟨[], _⟩, ⟨[], _⟩ => 0
   | ⟨a :: as, ha⟩, ⟨x :: xs, hx⟩ => a*x + prodSum ⟨as, congrArg Nat.pred ha⟩ ⟨xs, congrArg Nat.pred hx⟩
 
+/-- Represent the sum in equation (4) in the paper, i.e. `a_0*(x_0-l_0) + a_1*(x_1-l_1) + ... + a_i*(x_i-l_i)`-/
 def upToProd {k: Nat} (as ls xs : Vector Int k) (i: Fin k) : Int :=
   prodSum (as.drop i) (Vector.zipWith (λ x l ↦ x-l) (xs.drop i) (ls.drop i))
 
+/-- The offset of the domain of f_inv, i.e. the value of f when all x_i are at their lower bound, which is `f(l_0, .., l_{k-1})`-/
 def offset (b: Int) (as ls: Mathlib.Vector Int k): Int := b + prodSum as ls
 
+/-- The domain of f-/
 def X (as ls : Vector Int (k+1)) (n : Int)
 (C: Vector Int (k+1) → Prop)
 : Set (Vector Int (k+1)) :=
   {xs : Vector Int (k+1) |
+    -- This represent the regular bounds in the quantifier, also used in the paper for domain X.
     xs.head < ls.head + n ∧
     (∀ i: Fin (k+1), ls.get i ≤ xs.get i) ∧
+    -- This represents condition (4) in the paper.
+    -- However instead of using absolute values, we case distinction on the sign
+    -- of a_k (all a_i have the same sign by Props), which is equivalent.
     (∀ i: Fin (k+1), ↑i<k →
       (0 < as.last → upToProd as ls xs (i+1)  < as.get i) ∧
       (as.last < 0 → as.get i < upToProd as ls xs (i+1)) )
     ∧ C xs
   }
 
+/-- The range of f and conversely the domain of f_inv.-/
 def Y (as ls: Vector Int (k+1)) (off n: Int)
 (C: Vector Int (k+1) → Prop)
 : Set Int :=
@@ -49,14 +61,16 @@ def Y (as ls: Vector Int (k+1)) (off n: Int)
     ∧ C (f_inv off as ls x)
   }
 
+/-- This represents equation (1), (2) and (3) in the paper, i.e. the properties on a and n.-/
 def Props (as : Vector Int (k+1)) (n : Int)
 : Prop :=
   0 < n ∧
   (∀ i, as.get i ≠ 0) ∧
+  -- This states that the same sign, which is equivalent to (3)
   (∀ i, i<k → Int.sign (as.get i) = Int.sign (as.get (i+1)))
 
 
--- Helper definitions, on which most of the actual proves take place.
+/-- Helper definitions, on which most of the actual proves take place.-/
 def f' (b: Int) (as ls xs:  Mathlib.Vector Int k) : Int := b + prodSum as (Vector.zipWith (λ x l ↦ x-l) xs ls)
 
 def f_inv_el (off: Int) (as ls: Mathlib.Vector Int (k+1)) (x': Int) (i: Fin (k+1)): Int :=

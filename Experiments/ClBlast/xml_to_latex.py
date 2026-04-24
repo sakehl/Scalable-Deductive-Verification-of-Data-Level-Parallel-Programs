@@ -176,7 +176,7 @@ def generate_latex_tabular_exp(experiments, is_mem: bool=False):
     total_v_normal = 0
     total_v_unique = 0
     for base_name, tags in experiments.items():
-        base_name = base_name.replace("_", "\_")
+        base_name = base_name.replace("_", "\\_")
         if(base_name[-1] in ["0", "1", "2", "3"]):
             version = base_name[-1]
             base_name = base_name[:-2]
@@ -191,9 +191,9 @@ def generate_latex_tabular_exp(experiments, is_mem: bool=False):
         tag_printed = False
         rest_conv_printed = True
         if version == "":
-          if(base_name == "depthwise\_separable\_conv"):
-            first_line = "\\multicolumn{2}{l}{depthwise\_}"
-            second_line = "\\multicolumn{2}{l}{separable\_conv}"
+          if(base_name == "depthwise\\_separable\\_conv"):
+            first_line = "\\multicolumn{2}{l}{depthwise\\_}"
+            second_line = "\\multicolumn{2}{l}{separable\\_conv}"
           else:
             first_line = f"\\multicolumn{{2}}{{l}}{{{base_name}}}"
         elif version == "0":
@@ -201,7 +201,7 @@ def generate_latex_tabular_exp(experiments, is_mem: bool=False):
         else:
           first_line = f" & {version}"
         for i in range(0, 4):
-            if(base_name == "depthwise\_separable\_conv"):
+            if(base_name == "depthwise\\_separable\\_conv"):
                 if not tag_printed:
                     current_line = first_line
                     rest_conv_printed = False
@@ -233,7 +233,7 @@ def generate_latex_tabular_exp(experiments, is_mem: bool=False):
                     rest_conv_printed = True
                 tag_printed = True
             elif i == 3 and not rest_conv_printed:
-                latex.append("separable\_conv & & & & & & & & \\\\")
+                latex.append("separable\\_conv & & & & & & & & \\\\")
         # if(prev_base_name != base_name[:-2] and (version =="" or version == "3")):
         if(prev_base_name != base_name[:-2]):
             latex.append("\\hline")
@@ -303,7 +303,7 @@ def generate_latex_padre(experiments):
     latex = []
     i = 0
     result_name = {0: "\\checkmark", 1: "$\\times$", 2: "Error", 3: "T.O."}
-    latex.append("\\newcommand{\widthPadre}{0.7}")
+    latex.append("\\newcommand{\\widthPadre}{0.7}")
     for base_name, tags in experiments.items():
         latex.append("\\subfloat[\\label{tab:" + base_name + "}\\texttt{" + names[base_name] +"}]{")
         latex.append("\\resizebox{\\widthPadre\\textwidth}{!}{")
@@ -395,7 +395,7 @@ def generate_latex_blas(experiments, level):
         head += "& \\multicolumn{3}{c}{\\textbf{" + names[l] +"}}"
     head += "\\\\"
     latex.append(head)
-    latex.append("\\textbf{Kernel} & $\#_{imm}$ & $\#_{p}$ & $\#_{A}$ & \\textbf{Result} & \\textbf{\\#} & \\textbf{T}"+ 
+    latex.append("\\textbf{Kernel} & $\\#_{imm}$ & $\\#_{p}$ & $\\#_{A}$ & \\textbf{Result} & \\textbf{\\#} & \\textbf{T}"+ 
                     "".join(" & \\textbf{\\#} & \\textbf{T} & \\textbf{Speedup}" for _ in labels[1:])
                 + "\\\\"
                 )
@@ -413,7 +413,7 @@ def generate_latex_blas(experiments, level):
         original_name = get_base_filename(base_name)
         info = nr_arrays.get(original_name, ("-", "-", "-"))
         if original_name in functional_correct:
-            name = original_name + "$^\dagger$"
+            name = original_name + "$^\\dagger$"
         else:
             name = original_name
         
@@ -522,7 +522,7 @@ def generate_blas_barplots(experiments, level: int):
         kernel_positions.append(group_start + (len(labels) - 1) * bar_width / 2)
         original_name = get_base_filename(kernel)
         if original_name in functional_correct:
-            name = original_name + "$^\dagger$"
+            name = original_name + "$^\\dagger$"
         else:
             name = original_name
         kernels.append(name)
@@ -636,6 +636,8 @@ def generate_blas_barplots(experiments, level: int):
     out_path = f"{DIR}/results/blas_level{level}_barplot.pdf"
     plt.savefig(out_path)
     plt.close()
+    print(f"Generated barplot successfully for ClBlast level {level}:")
+    print(f"  PDF: {out_path}")
 
 def generate_latex_main():
     latex = []
@@ -689,14 +691,6 @@ $\\#_{imm}$ and $\\#_p$ is the number of immutable and normal pointer arrays, re
     return "\n".join(latex)
 
 def main(input_xml_blas_level1, input_xml_blas_level2, output_tex):
-    # experiments, experiments_mem  = parse_xml_exp(input_xml_exp)
-    # latex_exp = generate_latex_tabular_exp(experiments_mem, True)
-    # with open(f"{DIR}/results/exp-mem.tex", 'w') as f:
-    #     f.write("\n".join(latex_exp))
-
-    # latex_exp = generate_latex_tabular_exp(experiments, False)
-    # with open(f"{DIR}/results/exp.tex", 'w') as f:
-    #     f.write("\n".join(latex_exp))
 
     for level in [1,2]:
         # if level == 1:
@@ -706,19 +700,33 @@ def main(input_xml_blas_level1, input_xml_blas_level2, output_tex):
         with open(f"{DIR}/results/blas_level{level}.tex", 'w') as f:
             f.write(latex_padre)
         generate_blas_barplots(experiments_padre, level=level)
-    # experiments_padre = parse_xml(input_xml_blas_level2)
-    # latex_padre= generate_latex_padre(experiments_padre)
-    # with open(f"{DIR}/results/blas_level2.tex", 'w') as f:
-    #     f.write(latex_padre)
 
     latex_main = generate_latex_main()
     with open(output_tex, 'w') as f:
         f.write(latex_main)
 
     # Generate PDF using pdflatex
-    subprocess.run(['pdflatex', '-output-directory', f'{DIR}/results', output_tex])
+    pdf_path = output_tex.replace(".tex", ".pdf")
+    pdflatex_result = subprocess.run(
+        ['pdflatex', '--interaction=nonstopmode', '-output-directory', f'{DIR}/results', output_tex],
+        capture_output=True,
+        text=True,
+    )
+    if pdflatex_result.returncode == 0 and os.path.exists(pdf_path) and os.path.getsize(pdf_path) > 0:
+        print(f"Generated table successfully for ClBlast:")
+        print(f"  PDF: {pdf_path}")
+    else:
+        print(f"Failed to generate {os.path.basename(pdf_path)}.")
+        if pdflatex_result.stderr:
+            print(pdflatex_result.stderr.strip())
+        elif pdflatex_result.stdout:
+            print(pdflatex_result.stdout.strip())
+
     out_base = output_tex.replace(".tex", "")
-    subprocess.run(['rm', f"{out_base}.aux", f"{out_base}.log"])
+    for ext in [".aux", ".log"]:
+        artifact_path = f"{out_base}{ext}"
+        if os.path.exists(artifact_path):
+            os.remove(artifact_path)
 
 if __name__ == "__main__":
     default_timestamp = "2025-12-14"
