@@ -1,0 +1,10 @@
+#!/bin/bash
+set -e
+ROOT="$(dirname "$(dirname "$(readlink -f $0)")")"
+RUN_SCRIPT="$ROOT/out/vercors/main/runScript.dest/vercors"
+
+if [[ "${VCT_FORCE_REBUILD:-0}" = "1" || ! -x "$RUN_SCRIPT" ]]; then
+	(cd "$ROOT"; ./mill -j 0 vercors.main.runScript)
+fi
+
+"$RUN_SCRIPT" "$@"
